@@ -17,7 +17,7 @@ class TestConfigSchema(unittest.TestCase):
         self.assertEqual(cfg.fov_radians, 0.4)
         self.assertEqual(cfg.azimuth_range_deg, (-110.0, 110.0))
         self.assertEqual(cfg.pitch_range_deg, (60.0, 90.0))
-        self.assertEqual(cfg.guidance_scale, 7.0)
+        self.assertEqual(cfg.guidance_scale, 5.0)
 
     def test_stage2_config_defaults(self):
         """Test Stage2Config defaults."""
