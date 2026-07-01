@@ -153,15 +153,18 @@ def run_stage1(
     writer = SummaryWriter(log_dir="logs/tensorboard/stage1")
     os.makedirs("outputs/renders/stage1", exist_ok=True)
 
-    gs = initial_state
-    # Move and detach (make leaf tensors for optimizer)
-    for field in ['means', 'scales', 'rotations', 'opacities', 'sh_coeffs', 'vertex_id']:
-        t = getattr(gs, field, None)
-        if t is not None:
-            t = t.detach().to(device)
-            if t.is_floating_point():
-                t.requires_grad_(True)
-            setattr(gs, field, t)
+    # Create fresh GaussianState on GPU with leaf tensors for optimizer
+    def _to_leaf(t):
+        return torch.tensor(t.detach().cpu().numpy(), device=device, requires_grad=t.is_floating_point())
+
+    gs = GaussianState(
+        means=_to_leaf(initial_state.means),
+        scales=_to_leaf(initial_state.scales),
+        rotations=_to_leaf(initial_state.rotations),
+        opacities=_to_leaf(initial_state.opacities),
+        sh_coeffs=_to_leaf(initial_state.sh_coeffs),
+        vertex_id=initial_state.vertex_id.clone().to(device),
+    )
 
     n_vertices = gs.vertex_id.shape[0]
     # Face mask: approximate facial region (top 55% of vertices, excludes neck)
@@ -169,11 +172,7 @@ def run_stage1(
     face_mask[:int(n_vertices * 0.55)] = True
 
     # Build optimizer with separate LRs for position vs color/appearance
-    pos_params = gs.means[face_mask]
-    color_params = [gs.scales[face_mask], gs.rotations[face_mask],
-                    gs.opacities[face_mask], gs.sh_coeffs[face_mask]]
-
-    optimizer = build_optimizer([pos_params, color_params], config)
+    optimizer = build_optimizer([gs.means, [gs.scales, gs.rotations, gs.opacities, gs.sh_coeffs]], config)
 
     # Pre-compute initial offsets for connectivity regularizer
     initial_offsets = compute_initial_offsets(gs.means, k=config.k_neighbors)
@@ -260,15 +259,18 @@ def run_stage2(
     writer = SummaryWriter(log_dir="logs/tensorboard/stage2")
     os.makedirs("outputs/renders/stage2", exist_ok=True)
 
-    gs = stage1_state
-    # Move and detach Gaussian state tensors (make leaf tensors for optimizer)
-    for field in ['means', 'scales', 'rotations', 'opacities', 'sh_coeffs', 'vertex_id']:
-        t = getattr(gs, field, None)
-        if t is not None:
-            t = t.detach().to(device)
-            if t.is_floating_point():
-                t.requires_grad_(True)
-            setattr(gs, field, t)
+    # Create fresh GaussianState on GPU with leaf tensors for optimizer
+    def _to_leaf(t):
+        return torch.tensor(t.detach().cpu().numpy(), device=device, requires_grad=t.is_floating_point())
+
+    gs = GaussianState(
+        means=_to_leaf(stage1_state.means),
+        scales=_to_leaf(stage1_state.scales),
+        rotations=_to_leaf(stage1_state.rotations),
+        opacities=_to_leaf(stage1_state.opacities),
+        sh_coeffs=_to_leaf(stage1_state.sh_coeffs),
+        vertex_id=stage1_state.vertex_id.clone().to(device),
+    )
 
     # Build optimizer for ALL parameters (pos vs color groups)
     optimizer = build_optimizer(
