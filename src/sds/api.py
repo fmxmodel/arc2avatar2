@@ -237,19 +237,17 @@ def sds_step(
         with torch.no_grad():
             if isinstance(prior_model, dict):
                 unet = prior_model.get("unet", None)
-                if unet is not None:
-                    # Full PoseConditionedUNet path with ID embedding
-                    pose_enc = encode_pose_for_sds(camera).to(device)
-                    id_vec = identity_embedding.vector.unsqueeze(0).to(device)
-                    # Combine ID + pose for encoder_hidden_states
-                    cond = torch.cat([id_vec, pose_enc.unsqueeze(1)], dim=1)
-                    noise_pred = unet(
+                if unet is not None and hasattr(unet, 'base_unet'):
+                    # PoseConditionedUNet: pass ID embedding as encoder_hidden_states
+                    # The model internally concatenates pose embedding
+                    id_vec = identity_embedding.vector.unsqueeze(0).to(device)  # [1, 512]
+                    pose_enc = encode_pose_for_sds(camera).to(device)  # [4]
+                    result = unet(
                         noised, t,
-                        encoder_hidden_states=cond,
+                        encoder_hidden_states=id_vec,
+                        pose_embedding=pose_enc,
                     )
-                    # Handle both dict and tensor returns
-                    if isinstance(noise_pred, dict):
-                        noise_pred = noise_pred.get("sample", noise.clone())
+                    noise_pred = result if isinstance(result, torch.Tensor) else noise.clone()
                 else:
                     noise_pred = noise.clone()
             elif hasattr(prior_model, "unet"):
