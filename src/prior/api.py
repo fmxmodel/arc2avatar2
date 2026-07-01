@@ -32,15 +32,22 @@ class PoseConditionedUNet(nn.Module):
 
     def forward(self, noisy_latents, timesteps, encoder_hidden_states, pose_embedding=None):
         if pose_embedding is not None:
-            pose_emb = self.pose_proj(pose_embedding)
-            pose_emb = self.pose_norm(pose_emb)
+            # pose_embedding: [B, 4] or [4] -> project to cross-attn dim
+            if pose_embedding.dim() == 1:
+                pose_emb = self.pose_proj(pose_embedding)  # [768]
+                pose_emb = self.pose_norm(pose_emb)
+                pose_emb = pose_emb.unsqueeze(0).unsqueeze(1)  # [1, 1, 768]
+            else:
+                pose_emb = self.pose_proj(pose_embedding)
+                pose_emb = self.pose_norm(pose_emb)  # [B, 768]
+                pose_emb = pose_emb.unsqueeze(1)  # [B, 1, 768]
             # Concatenate pose embedding with text embedding
             if encoder_hidden_states is not None:
                 encoder_hidden_states = torch.cat(
-                    [encoder_hidden_states, pose_emb.unsqueeze(1)], dim=1
+                    [encoder_hidden_states, pose_emb], dim=1
                 )
             else:
-                encoder_hidden_states = pose_emb.unsqueeze(1)
+                encoder_hidden_states = pose_emb
 
         return self.base_unet(
             noisy_latents, timesteps,
