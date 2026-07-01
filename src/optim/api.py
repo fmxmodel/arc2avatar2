@@ -144,6 +144,11 @@ def run_stage1(
     os.makedirs("outputs/renders/stage1", exist_ok=True)
 
     gs = initial_state
+    # Move Gaussian state tensors to target device
+    for field in ['means', 'scales', 'rotations', 'opacities', 'sh_coeffs', 'vertex_id']:
+        t = getattr(gs, field, None)
+        if t is not None and t.device != device:
+            setattr(gs, field, t.to(device))
     n_vertices = gs.vertex_id.shape[0]
     face_mask = _get_face_mask(n_vertices, device)
 
@@ -244,6 +249,11 @@ def run_stage2(
     os.makedirs("outputs/renders/stage2", exist_ok=True)
 
     gs = stage1_state
+    # Move Gaussian state tensors to target device
+    for field in ['means', 'scales', 'rotations', 'opacities', 'sh_coeffs', 'vertex_id']:
+        t = getattr(gs, field, None)
+        if t is not None and t.device != device:
+            setattr(gs, field, t.to(device))
 
     # Build optimizer for ALL parameters
     optimizer = build_optimizer(
