@@ -45,10 +45,10 @@ class TestConfigSchema(unittest.TestCase):
         self.assertTrue(any("iterations" in e.field_path for e in errors))
 
     def test_resolve_config_fast_debug(self):
-        """Test experiment override works (fast_debug: 20 Stage-1 iter)."""
+        """Test experiment override works (fast_debug: 100 Stage-1 iter)."""
         from src.config.schema import resolve_config
         cfg = resolve_config(experiment="fast_debug")
-        self.assertEqual(cfg.stage1.iterations, 20)
+        self.assertEqual(cfg.stage1.iterations, 100)
 
     def test_resolve_config_cli_override(self):
         """Test CLI override takes precedence."""

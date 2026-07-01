@@ -2,7 +2,7 @@
 Arc2Avatar — End-to-End Integration Smoke Test (Directive 33)
 ===============================================================
 Runs the full pipeline on a tiny/cheap configuration:
-- Stage 1 = 20 iterations (instead of 500)
+- Stage 1 = 100 iterations (instead of 500)
 - Stage 2 = 50 iterations (instead of 1500-3000)
 - No expression refinement
 
@@ -45,7 +45,7 @@ class TestFullPipelineSmoke(unittest.TestCase):
         # This should not raise or exit
         config = load_and_validate_config(experiment="fast_debug")
         self.assertIsNotNone(config)
-        self.assertEqual(config.stage1.iterations, 20)
+        self.assertEqual(config.stage1.iterations, 100)
         self.assertEqual(config.stage2.iterations, 50)
 
     def test_dependency_graph_is_dag(self):
@@ -243,7 +243,7 @@ class TestFullPipelineSmoke(unittest.TestCase):
 
         # Layer 2: Experiment override
         cfg = resolve_config(experiment="fast_debug")
-        self.assertEqual(cfg.stage1.iterations, 20)
+        self.assertEqual(cfg.stage1.iterations, 100)
 
         # Layer 4: CLI override
         cfg = resolve_config(cli_args={"stage1": {"iterations": 100}})
