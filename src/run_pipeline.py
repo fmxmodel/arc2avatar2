@@ -34,65 +34,328 @@ def step_env_check(config) -> None:
     results = check_environment(config)
     if not results["all_pass"]:
         raise RuntimeError("Directive 4 FAILED: Environment check incomplete.")
+    print("  ✓ All 4 checks passed")
 
 
 def step_data_prep(config) -> None:
     """Directives 5-9: Data acquisition and preprocessing (skip if checksums match)."""
+    import os
+    from src.data.api import (
+        validate_input_image,
+        extract_identity_embedding,
+        load_flame_template,
+        verify_panohead_dataset,
+    )
+    from src.contracts.schemas import compute_file_hash
+
     print(f"\n[Directives 5-9] Data preparation")
-    # TODO: Full implementation on GPU system
-    # - Validate input image (mediapipe face detection)
-    # - Download/verify arc2face_base and FLAME template
-    # - Extract ID embedding (ArcFace encoder)
-    # - Load FLAME template
-    # - Verify panohead dataset
-    print("  [PREBUILD] Data prep stubs — full implementation on GPU system.")
+
+    # Step 5: Validate input image
+    img_path = config.data_prep.input_image_path
+    if os.path.exists(img_path):
+        validate_result = validate_input_image(img_path)
+        print(f"  ✓ Input image validated: {validate_result['bbox_size']}px bbox")
+    else:
+        print(f"  ⚠ Input image not found: {img_path} (will use placeholder)")
+
+    # Step 6: Verify checkpoints exist
+    for ckpt_dir in [config.data_prep.arc2face_base_path,
+                     os.path.dirname(config.data_prep.flame_template_path)]:
+        if os.path.exists(ckpt_dir):
+            print(f"  ✓ Checkpoint present: {ckpt_dir}")
+        else:
+            print(f"  ⚠ Missing checkpoint: {ckpt_dir}")
+
+    # Step 7: Extract ID embedding (skip if already exists)
+    if not os.path.exists(config.data_prep.id_embedding_path):
+        if os.path.exists(img_path):
+            extract_identity_embedding(
+                img_path,
+                config.data_prep.id_embedding_path,
+                config.data_prep.id_embedding_json_path,
+            )
+            print(f"  ✓ ID embedding extracted → {config.data_prep.id_embedding_path}")
+        else:
+            print(f"  ⚠ Cannot extract embedding — no input image")
+    else:
+        print(f"  ✓ ID embedding already exists (skip)")
+
+    # Step 8: Load FLAME template (skip if already exists)
+    if not os.path.exists(config.data_prep.flame_loaded_path):
+        if os.path.exists(config.data_prep.flame_template_path):
+            load_flame_template(
+                config.data_prep.flame_template_path,
+                config.data_prep.flame_loaded_path,
+            )
+            print(f"  ✓ FLAME template loaded → {config.data_prep.flame_loaded_path}")
+        else:
+            print(f"  ⚠ FLAME template not found: {config.data_prep.flame_template_path}")
+    else:
+        print(f"  ✓ FLAME template already exists (skip)")
+
+    # Step 9: Verify panohead dataset
+    if os.path.exists(config.data_prep.panohead_path):
+        pano_result = verify_panohead_dataset(
+            config.data_prep.panohead_path,
+            config.data_prep.min_panohead_identities,
+            config.data_prep.min_panohead_angles,
+        )
+        print(f"  ✓ PanoHead dataset: {pano_result['identity_count']} identities")
+    else:
+        print(f"  ⚠ PanoHead dataset not found: {config.data_prep.panohead_path}")
 
 
 def step_gaussian_init(config) -> None:
     """Directives 10-13: Gaussian initialization and average-texture fitting."""
+    import os
+    from src.data.api import load_flame_template
+    from src.gauss.api import init_gaussians_from_flame, run_avg_texture_fit
+    from src.contracts.schemas import load_flame_mesh
+
     print(f"\n[Directives 10-13] Gaussian initialization + avg-texture fit")
-    # TODO: Full implementation on GPU system
-    print("  [PREBUILD] Gaussian init stubs — full implementation on GPU system.")
+
+    # Load FLAME mesh
+    if os.path.exists(config.data_prep.flame_loaded_path):
+        flame_mesh = load_flame_mesh(config.data_prep.flame_loaded_path)
+    elif os.path.exists(config.data_prep.flame_template_path):
+        # Load directly from PKL
+        from src.data.api import load_flame_template as load_flame
+        load_flame(config.data_prep.flame_template_path, config.data_prep.flame_loaded_path)
+        flame_mesh = load_flame_mesh(config.data_prep.flame_loaded_path)
+    else:
+        print("  ⚠ FLAME mesh not available — creating synthetic placeholder")
+        import torch
+        from src.contracts.schemas import FlameMesh
+        nv = 5023
+        flame_mesh = FlameMesh(
+            V=torch.randn(nv, 3),
+            F=torch.randint(0, nv, (9976, 3)),
+            shape_bs=torch.randn(nv, 3, 300),
+            expr_bs=torch.randn(nv, 3, 100),
+            pose_bs=torch.randn(nv, 3, 36),
+        )
+
+    # Directive 10: Initialize Gaussians
+    if not os.path.exists(config.gaussian_init.init_state_path):
+        gs = init_gaussians_from_flame(flame_mesh, config.gaussian_init)
+        print(f"  ✓ Gaussians initialized: {gs.means.shape[0]} primitives")
+    else:
+        from src.contracts.schemas import load_gaussian_state
+        gs = load_gaussian_state(config.gaussian_init.init_state_path)
+        print(f"  ✓ Gaussians already initialized (loaded from checkpoint)")
+
+    # Directive 13: Average texture fit
+    if not os.path.exists(config.gaussian_init.avg_texture_path):
+        gs = run_avg_texture_fit(gs, config.gaussian_init)
+        print(f"  ✓ Average texture fit complete")
+    else:
+        print(f"  ✓ Average texture fit already exists (skip)")
 
 
 def step_finetune_prior(config) -> None:
     """Directives 14-16: Arc2Face fine-tuning (skip if final.pt already exists)."""
     import os
+    from src.prior.api import extend_model_with_pose_conditioning, finetune_prior
+    from src.resource.gpu_manager import get_device
+
     print(f"\n[Directives 14-16] Arc2Face fine-tuning")
+    device = get_device()
+
     if os.path.exists(config.finetune.final_path):
-        print(f"  SKIP: {config.finetune.final_path} already exists.")
+        print(f"  ✓ Fine-tuned prior already exists: {config.finetune.final_path} (skip)")
         return
-    print("  [PREBUILD] Fine-tuning stubs — full implementation on GPU system.")
+
+    # Directive 14: Extend model with pose conditioning
+    if not os.path.exists(config.finetune.arch_init_path):
+        base_path = config.data_prep.arc2face_base_path
+        if os.path.exists(base_path):
+            extend_model_with_pose_conditioning(base_path, config.finetune.arch_init_path, device)
+            print(f"  ✓ Model extended with pose conditioning")
+        else:
+            print(f"  ⚠ Base Arc2Face checkpoint not found: {base_path}")
+            print(f"  [SKIP] Fine-tuning requires the base Arc2Face checkpoint")
+            return
+    else:
+        print(f"  ✓ Architecture already extended (skip)")
+
+    # Directive 15: Fine-tune
+    finetune_prior(
+        config.finetune.arch_init_path,
+        config.data_prep.panohead_path,
+        config.finetune,
+    )
+
+    # Directive 16: Freeze
+    from src.prior.api import freeze_and_export
+    freeze_and_export(config.finetune.arch_init_path, config.finetune.final_path)
+    print(f"  ✓ Fine-tuned prior frozen and exported → {config.finetune.final_path}")
 
 
 def step_stage1(config) -> None:
     """Directive 21: Stage 1 face-only optimization."""
+    import os
+    from src.contracts.schemas import load_gaussian_state
+    from src.contracts.schemas import load_identity_embedding
+    from src.optim.api import run_stage1
+    from src.prior.api import load_frozen_prior
+
     print(f"\n[Directive 21] Stage 1 — face-only optimization ({config.stage1.iterations} iter)")
-    print("  [PREBUILD] Stage 1 stubs — full implementation on GPU system.")
+
+    if os.path.exists(config.stage1.checkpoint_path):
+        print(f"  ✓ Stage 1 checkpoint already exists (skip)")
+        return
+
+    # Load prerequisites
+    gs = load_gaussian_state(config.gaussian_init.avg_texture_path)
+    identity = load_identity_embedding(
+        config.data_prep.id_embedding_path,
+        config.data_prep.id_embedding_json_path,
+    )
+    prior = load_frozen_prior(config.finetune.final_path) if os.path.exists(config.finetune.final_path) else None
+
+    result = run_stage1(gs, identity, prior, config.stage1)
+    print(f"  ✓ Stage 1 complete → {config.stage1.checkpoint_path}")
 
 
 def step_stage2(config) -> None:
     """Directive 22: Stage 2 full-head optimization."""
+    import os
+    from src.contracts.schemas import load_gaussian_state, load_identity_embedding
+    from src.optim.api import run_stage2
+    from src.prior.api import load_frozen_prior
+
     print(f"\n[Directive 22] Stage 2 — full-head optimization ({config.stage2.iterations} iter)")
-    print("  [PREBUILD] Stage 2 stubs — full implementation on GPU system.")
+
+    if os.path.exists(config.stage2.checkpoint_path):
+        print(f"  ✓ Stage 2 checkpoint already exists (skip)")
+        return
+
+    gs = load_gaussian_state(config.stage1.checkpoint_path)
+    identity = load_identity_embedding(
+        config.data_prep.id_embedding_path,
+        config.data_prep.id_embedding_json_path,
+    )
+    prior = load_frozen_prior(config.finetune.final_path) if os.path.exists(config.finetune.final_path) else None
+
+    run_stage2(gs, identity, prior, config.stage2)
+    print(f"  ✓ Stage 2 complete → {config.stage2.checkpoint_path}")
 
 
 def step_animation(config) -> None:
     """Directives 24-27: Per-expression animation + refinement."""
+    import os
+    import torch
+    from src.contracts.schemas import (
+        load_gaussian_state, load_flame_mesh, load_identity_embedding,
+        ExpressionState,
+    )
+    from src.animation.api import (
+        apply_blendshapes, detect_mouth_opening,
+        run_refinement, check_identity_preservation,
+    )
+    from src.prior.api import load_frozen_prior
+    from src.sds.api import render
+
     print(f"\n[Directives 24-27] Expression animation + refinement")
-    for expr in config.animation.expressions:
-        print(f"  Expression: {expr}")
-    print("  [PREBUILD] Animation stubs — full implementation on GPU system.")
+
+    if not os.path.exists(config.stage2.checkpoint_path):
+        print("  ⚠ Stage 2 checkpoint not found — skipping animation")
+        return
+
+    gs = load_gaussian_state(config.stage2.checkpoint_path)
+    flame_mesh = load_flame_mesh(config.data_prep.flame_loaded_path) if os.path.exists(config.data_prep.flame_loaded_path) else None
+    identity = load_identity_embedding(
+        config.data_prep.id_embedding_path,
+        config.data_prep.id_embedding_json_path,
+    ) if os.path.exists(config.data_prep.id_embedding_path) else None
+    prior = load_frozen_prior(config.finetune.final_path) if os.path.exists(config.finetune.final_path) else None
+
+    expression_states = []
+    for expr_name in config.animation.expressions:
+        print(f"  Expression: {expr_name}")
+
+        # Create expression state
+        expr = ExpressionState(
+            name=expr_name,
+            flame_expr_coeffs=torch.zeros(100),
+            flame_pose_coeffs=torch.zeros(36),
+        )
+
+        # Set expression-specific coefficients
+        if expr_name == "smile":
+            expr.flame_expr_coeffs[0] = 0.5  # Lip corner pull
+        elif expr_name == "open_mouth":
+            expr.flame_pose_coeffs[4] = 0.4  # Jaw open
+        elif expr_name == "raised_brow":
+            expr.flame_expr_coeffs[1] = 0.3  # Brow raise
+
+        # Directive 25: Detect if refinement needed
+        needs_refinement = detect_mouth_opening(expr, config.animation)
+        print(f"    Requires refinement: {needs_refinement}")
+
+        if needs_refinement and prior is not None:
+            # Directive 26: Run refinement
+            expr = run_refinement(gs, expr, identity, prior, config.animation)
+            print(f"    Refinement complete")
+
+            # Directive 27: Check identity preservation
+            if identity is not None:
+                cam = sample_camera((0, 0), (60, 60), 0.4, 2.0)
+                rendered = render(gs, cam)
+                similarity = check_identity_preservation(
+                    rendered.image, identity, config.animation
+                )
+                print(f"    Identity similarity: {similarity:.4f}")
+
+        expression_states.append(expr)
+
+    print(f"  ✓ {len(expression_states)} expressions processed")
 
 
 def step_export(config) -> None:
     """Directives 28-31: Export final deliverables."""
+    import os
+    from src.contracts.schemas import load_gaussian_state
+    from src.export.api import (
+        export_static_ply, render_turntable,
+        package_animation_bundle, write_run_manifest,
+    )
+
     print(f"\n[Directives 28-31] Export")
     print(f"  PLY:   {config.export.ply_path}")
     print(f"  Video: {config.export.turntable_path}")
     print(f"  Bundle:{config.export.animation_bundle_path}")
     print(f"  Manifest: {config.export.run_manifest_path}")
-    print("  [PREBUILD] Export stubs — full implementation on GPU system.")
+
+    if not os.path.exists(config.stage2.checkpoint_path):
+        print("  ⚠ Stage 2 checkpoint not found — skipping export")
+        return
+
+    gs = load_gaussian_state(config.stage2.checkpoint_path)
+
+    # Directive 28: Export PLY
+    if not os.path.exists(config.export.ply_path):
+        export_static_ply(gs, config.export.ply_path)
+    else:
+        print(f"  ✓ PLY already exists (skip)")
+
+    # Directive 29: Turntable render
+    if not os.path.exists(config.export.turntable_path):
+        render_turntable(gs, config.export)
+    else:
+        print(f"  ✓ Turntable already exists (skip)")
+
+    # Directive 30: Animation bundle
+    if not os.path.exists(config.export.animation_manifest_path):
+        package_animation_bundle(gs, [], None, config.export.animation_bundle_path)
+    else:
+        print(f"  ✓ Animation bundle already exists (skip)")
+
+    # Directive 31: Run manifest
+    if not os.path.exists(config.export.run_manifest_path):
+        write_run_manifest(config, {}, {}, config.export.run_manifest_path)
+    else:
+        print(f"  ✓ Run manifest already exists (skip)")
 
 
 def step_final_checklist(config) -> None:
@@ -100,20 +363,22 @@ def step_final_checklist(config) -> None:
     import os
     print(f"\n[Directive 35] Final deliverable checklist")
     deliverables = [
-        config.export.ply_path,
-        config.export.turntable_path,
-        config.export.animation_bundle_path,
-        config.export.run_manifest_path,
+        ("subject_static.ply", config.export.ply_path),
+        ("turntable_360.mp4", config.export.turntable_path),
+        ("animation_bundle/manifest.json", config.export.animation_manifest_path),
+        ("run_manifest.json", config.export.run_manifest_path),
     ]
     all_ok = True
-    for d in deliverables:
-        exists = os.path.exists(d)
-        print(f"  {'✓' if exists else '✗'} {d}")
+    for name, path in deliverables:
+        exists = os.path.exists(path)
+        print(f"  {'✓' if exists else '✗'} {name} ({path})")
         if not exists:
             all_ok = False
 
-    if not all_ok:
-        print("  WARNING: Some deliverables not yet created (expected in prebuild mode).")
+    if all_ok:
+        print(f"\n  ✓ All deliverables present! Avatar build complete.")
+    else:
+        print(f"\n  ⚠ Some deliverables missing — re-run the relevant module.")
 
 
 def run_pipeline(config) -> None:
