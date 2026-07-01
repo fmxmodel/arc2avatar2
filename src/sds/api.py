@@ -24,25 +24,31 @@ from src.trainfw.grad_utils import sds_gradient_injection
 
 
 def _build_p3d_camera(camera: CameraSample, image_size: Tuple[int, int] = (512, 512)):
-    """Build a PyTorch3D camera from CameraSample."""
+    """Build a PyTorch3D camera from CameraSample using look-at-view transform."""
     from pytorch3d.renderer import FoVPerspectiveCameras
+    from pytorch3d.renderer.cameras import look_at_view_transform
 
     az_rad = math.radians(camera.azimuth_deg)
     el_rad = math.radians(camera.pitch_deg)
 
-    # Spherical to Cartesian
+    # Spherical to Cartesian for camera position
     x = camera.radius * math.cos(el_rad) * math.sin(az_rad)
     y = camera.radius * math.sin(el_rad)
     z = camera.radius * math.cos(el_rad) * math.cos(az_rad)
 
-    cam_pos = torch.tensor([[x, y, z]], dtype=torch.float32)
-    at = torch.tensor([camera.look_at], dtype=torch.float32)
-    up = torch.tensor([[0.0, 1.0, 0.0]], dtype=torch.float32)
+    cam_pos = ((x, y, z),)
+    at = camera.look_at
+
+    R, T = look_at_view_transform(
+        eye=cam_pos,
+        at=(at,),
+        up=((0.0, 1.0, 0.0),),
+        device=get_device(),
+    )
 
     return FoVPerspectiveCameras(
         device=get_device(),
-        R=None, T=None,
-        cam_pos=cam_pos, at=at, up=up,
+        R=R, T=T,
         fov=camera.fov_rad * 180.0 / math.pi,  # PyTorch3D uses degrees
     )
 
