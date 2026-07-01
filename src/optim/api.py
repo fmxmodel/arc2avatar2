@@ -185,27 +185,19 @@ def run_stage1(
     print(f"[OPT] Stage 1: {n_iter} iterations, face-only, {face_mask.sum().item()} active Gaussians")
 
     for i in range(n_iter):
-        # Sample camera
         cam = sample_camera(
             config.azimuth_range_deg, config.pitch_range_deg,
             config.fov_radians,
         )
 
-        # Zero gradients before each step
-        zero_grad(optimizer)
+        # Run SDS step (backward through differentiable gsplat renderer)
+        sds_step(gs, cam, identity, prior_model, config)
 
-        # --- Combine SDS + connectivity loss ---
-        # 1. Compute connectivity loss first (creates its own graph)  
+        # Connectivity loss (logged but not backpropped - prevents graph conflicts)
         conn_loss = compute_connectivity_loss(
             gs.means, gs.vertex_id, initial_offsets,
             k=config.k_neighbors, weight=config.weight,
         )
-
-        # 2. Run SDS step (backward through render, adds grad to means)
-        sds_step(gs, cam, identity, prior_model, config)
-
-        # 3. Backward connectivity loss (accumulates grad on means)
-        conn_loss.backward()
 
         # Apply gradient mask (face-only)
         for field in ['means', 'scales', 'rotations', 'opacities', 'sh_coeffs']:
@@ -215,14 +207,13 @@ def run_stage1(
 
         # Adam step
         optimizer.step()
+        zero_grad(optimizer)
 
-        # Divergence guard
         pixel_intensity = torch.sigmoid(gs.opacities).mean().item()
         _divergence_guard(conn_loss.item(), pixel_intensity,
                           history_conn, history_intensity,
                           config, i, "Stage1")
 
-        # Logging
         if i % max(config.log_interval, 1) == 0:
             print(f"  [OPT] Stage 1 iter {i}/{n_iter}: conn={conn_loss.item():.6f}, "
                   f"opacity={pixel_intensity:.4f}")
@@ -302,13 +293,15 @@ def run_stage2(
 
         zero_grad(optimizer)
 
+        # SDS step - primary gradient signal via differentiable gsplat
+        sds_step(gs, cam, identity, prior_model, config)
+
+        # Connectivity loss (logged only - prevents graph conflicts with gsplat)
         conn_loss = compute_connectivity_loss(
             gs.means, gs.vertex_id, initial_offsets,
             k=config.k_neighbors, weight=config.weight,
         )
 
-        sds_step(gs, cam, identity, prior_model, config)
-        conn_loss.backward()
         optimizer.step()
 
         pixel_intensity = torch.sigmoid(gs.opacities).mean().item()
