@@ -125,11 +125,11 @@ def sample_camera(
     Exceptions: raises RenderingError on invalid range.
     Side effects: none (random sampling each call).
     """
-    if azimuth_range[0] >= azimuth_range[1] or pitch_range[0] >= pitch_range[1]:
+    if (azimuth_range[1] - azimuth_range[0]) < 0 or (pitch_range[1] - pitch_range[0]) < 0:
         raise RenderingError(
             what_failed="Invalid camera range",
             why=f"azimuth={azimuth_range}, pitch={pitch_range}",
-            how_to_fix="Ensure min < max for both ranges",
+            how_to_fix="Ensure min <= max for both ranges",
         )
 
     az = random.uniform(azimuth_range[0], azimuth_range[1])
