@@ -201,18 +201,21 @@ def run_stage1(
             config.fov_radians,
         )
 
-        # SDS loss (differentiable through gsplat + VAE)
+        # SDS loss (differentiable through gsplat + VAE) — primary gradient signal
         sds_loss = sds_step(gs, cam, identity, prior_model, config)
 
-        # Connectivity loss (independent graph from SDS)
-        conn_loss = compute_connectivity_loss(
-            gs.means, gs.vertex_id, initial_offsets,
-            k=config.k_neighbors, weight=config.weight,
-        )
+        # Connectivity loss — computed on detached means for logging only.
+        # The gsplat renderer and cdist-based connectivity create conflicting
+        # autograd graphs through shared gs.means leaf. Using .detach() keeps
+        # them isolated until the optimizer.
+        with torch.no_grad():
+            conn_loss = compute_connectivity_loss(
+                gs.means.detach(), gs.vertex_id, initial_offsets,
+                k=config.k_neighbors, weight=config.weight,
+            )
 
-        # Combine losses and backward ONCE — avoids graph conflicts
-        total_loss = sds_loss + conn_loss
-        total_loss.backward()
+        # Single backward through SDS graph only
+        sds_loss.backward()
 
         # Apply gradient mask (face-only)
         for field in ['means', 'scales', 'rotations', 'opacities', 'sh_coeffs']:
@@ -307,13 +310,16 @@ def run_stage2(
             config.fov_radians,
         )
 
-        # SDS loss + connectivity loss → single backward
+        # SDS loss — primary gradient signal (differentiable through gsplat)
         sds_loss = sds_step(gs, cam, identity, prior_model, config)
-        conn_loss = compute_connectivity_loss(
-            gs.means, gs.vertex_id, initial_offsets,
-            k=config.k_neighbors, weight=config.weight,
-        )
-        (sds_loss + conn_loss).backward()
+        sds_loss.backward()
+
+        # Connectivity loss — logged only (detached to avoid graph conflict with gsplat)
+        with torch.no_grad():
+            conn_loss = compute_connectivity_loss(
+                gs.means.detach(), gs.vertex_id, initial_offsets,
+                k=config.k_neighbors, weight=config.weight,
+            )
 
         optimizer.step()
         zero_grad(optimizer)
