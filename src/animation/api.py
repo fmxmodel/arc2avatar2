@@ -127,7 +127,7 @@ def run_refinement(
     device = get_device()
     N = gaussian_state.means.shape[0]
 
-    # Freeze existing Gaussians
+    # Freeze existing Gaussians (detach to make leaf tensors)
     gs = gaussian_state
 
     # Seed mouth-interior Gaussians (at jaw hinge)
@@ -144,12 +144,12 @@ def run_refinement(
     mouth_sh[:, :, 0] = 0.5  # Flesh color
     mouth_vertex_id = torch.full((n_mouth,), N, dtype=torch.int64, device=device)
 
-    # Combine
-    all_means = torch.cat([gs.means, mouth_means])
-    all_scales = torch.cat([gs.scales, mouth_scales])
-    all_rotations = torch.cat([gs.rotations, mouth_rotations])
-    all_opacities = torch.cat([gs.opacities, mouth_opacities])
-    all_sh = torch.cat([gs.sh_coeffs, mouth_sh])
+    # Combine (detach gs tensors to make leaf for optimizer)
+    all_means = torch.cat([gs.means.detach(), mouth_means])
+    all_scales = torch.cat([gs.scales.detach(), mouth_scales])
+    all_rotations = torch.cat([gs.rotations.detach(), mouth_rotations])
+    all_opacities = torch.cat([gs.opacities.detach(), mouth_opacities])
+    all_sh = torch.cat([gs.sh_coeffs.detach(), mouth_sh])
     all_vid = torch.cat([gs.vertex_id, mouth_vertex_id])
 
     combined = GaussianState(
