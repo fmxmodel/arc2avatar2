@@ -119,9 +119,9 @@ class Stage1Config:
     fov_radians: float = 0.4
     azimuth_range_deg: Tuple[float, float] = (-110.0, 110.0)
     pitch_range_deg: Tuple[float, float] = (60.0, 90.0)
-    guidance_scale: float = 5.0
-    lr_position: float = 1e-4
-    lr_color: float = 5e-5
+    guidance_scale: float = 7.0
+    lr_position: float = 1e-2
+    lr_color: float = 1e-3
     log_interval: int = 50
     checkpoint_path: str = "checkpoints/gaussians/stage1_face.pt"
     k_neighbors: int = 8
@@ -143,9 +143,9 @@ class Stage2Config:
     fov_radians: float = 0.4
     azimuth_range_deg: Tuple[float, float] = (-180.0, 180.0)
     pitch_range_deg: Tuple[float, float] = (30.0, 120.0)
-    guidance_scale: float = 5.0
-    lr_position: float = 1e-3
-    lr_color: float = 5e-4
+    guidance_scale: float = 7.0
+    lr_position: float = 1e-2
+    lr_color: float = 1e-3
     log_interval: int = 50
     checkpoint_path: str = "checkpoints/gaussians/stage2_full_head.pt"
     k_neighbors: int = 8

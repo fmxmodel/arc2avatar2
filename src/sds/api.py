@@ -199,35 +199,37 @@ def sds_step(
 ) -> torch.Tensor:
     """Single SDS gradient step (Directive 19).
 
+    Returns a scalar loss tensor that can be combined with other losses
+    (e.g., connectivity) before a single `.backward()` call. This avoids
+    graph conflicts between multiple backward passes.
+
     5-step sequence:
     1. Render image from current Gaussian state
     2. Add forward diffusion noise at random timestep t
     3. Feed noised image into frozen prior conditioned on (ID, pose)
     4. Compute SDS gradient: grad = w(t) * (noise_pred - noise_added)
-    5. Backprop via explicit gradient injection
+    5. Return scalar loss proportional to SDS gradient
 
     Inputs:    GaussianState, CameraSample, IdentityEmbedding, frozen prior, config.
-    Outputs:   gradients applied to Gaussian parameters.
+    Outputs:   scalar loss tensor (caller must call .backward()).
     Exceptions: raises OptimizationError on SDS failure.
-    Side effects: none (computes gradients only).
+    Side effects: none (pure function, no backward called).
     """
     try:
         device = get_device_obj()
         guidance_scale = getattr(config, "guidance_scale", 5.0)
 
         # Step 1: Render (differentiable via gsplat)
-        with torch.enable_grad():
-            gaussian_state.means.requires_grad_(True)
-            gaussian_state.scales.requires_grad_(True)
-            gaussian_state.rotations.requires_grad_(True)
-            gaussian_state.opacities.requires_grad_(True)
-            gaussian_state.sh_coeffs.requires_grad_(True)
+        gaussian_state.means.requires_grad_(True)
+        gaussian_state.scales.requires_grad_(True)
+        gaussian_state.rotations.requires_grad_(True)
+        gaussian_state.opacities.requires_grad_(True)
+        gaussian_state.sh_coeffs.requires_grad_(True)
 
-            result = render(gaussian_state, camera)
-            rendered = result.image.unsqueeze(0).to(device)  # [1, 3, H, W]
+        result = render(gaussian_state, camera)
+        rendered = result.image.unsqueeze(0).to(device)  # [1, 3, H, W]
 
         # Step 2: Encode rendered image to latent space via VAE
-        # The UNet operates in latent space (4-channel for SD)
         if isinstance(prior_model, dict):
             vae = prior_model.get("vae", None)
             unet = prior_model.get("unet", None)
@@ -240,36 +242,28 @@ def sds_step(
         if vae is not None and unet is not None and hasattr(unet, 'base_unet'):
             # Full diffusion pipeline with VAE gradients
             rendered_norm = rendered * 2.0 - 1.0
-
-            # Encode with VAE (gradients flow through to rendered)
             latents = vae.encode(rendered_norm).latent_dist.sample() * 0.18215
 
-            # Add noise in latent space
             t = torch.randint(50, 950, (1,), device=device).long()
             noise = torch.randn_like(latents)
             noised = latents + noise * (t.float() / 1000.0)
 
-            # Predict noise
             id_vec = identity_embedding.vector.unsqueeze(0).unsqueeze(0).to(device)
             pose_enc = encode_pose_for_sds(camera).to(device)
             with torch.no_grad():
                 pred = unet(noised, t, encoder_hidden_states=id_vec, pose_embedding=pose_enc)
             noise_pred = pred["sample"] if isinstance(pred, dict) else pred
 
-            # SDS loss in latent space (gradients flow through VAE to renderer)
-            loss = (w_t * guidance_scale * ((noise_pred - noise) * noised).sum())
-            loss.backward()
-            grad_out = noise_pred
+            # Return scalar SDS loss (caller calls backward, combined with other losses)
+            return (w_t * guidance_scale * ((noise_pred - noise) * noised).sum())
         else:
-            # Fallback: simple image-space gradient
+            # Fallback: image-space SDS
             t = torch.randint(50, 950, (1,), device=device).long()
             alpha = (1000 - t.float()) / 1000.0
             noise = torch.randn_like(rendered)
+            noised = rendered * alpha + noise * (1 - alpha)
             noise_pred = noise.clone()
-            grad = w_t * guidance_scale * (noise_pred - noise)
-            rendered.backward(gradient=grad)
-            grad_out = grad
-        return grad_out
+            return (w_t * guidance_scale * ((noise_pred - noise) * noised).sum())
 
     except Exception as e:
         raise OptimizationError(

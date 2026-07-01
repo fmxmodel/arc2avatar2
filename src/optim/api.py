@@ -167,9 +167,20 @@ def run_stage1(
     )
 
     n_vertices = gs.vertex_id.shape[0]
-    # Face mask: approximate facial region (top 55% of vertices, excludes neck)
+    # Face mask: use FaceVerse skinmask if available, else heuristic
     face_mask = torch.zeros(n_vertices, dtype=torch.bool, device=device)
-    face_mask[:int(n_vertices * 0.55)] = True
+    try:
+        import numpy as np
+        fv = np.load("data/faceverse/faceverse_simple_v2.npy", allow_pickle=True).item()
+        if 'skinmask_select' in fv:
+            sm = fv['skinmask_select']  # [1, 6335] float32
+            mask_arr = sm[0] > 0.5
+            if len(mask_arr) >= n_vertices:
+                face_mask = torch.tensor(mask_arr[:n_vertices], device=device)
+    except Exception:
+        pass
+    if not face_mask.any():
+        face_mask[:int(n_vertices * 0.55)] = True  # fallback heuristic
 
     # Build optimizer with separate LRs for position vs color/appearance
     optimizer = build_optimizer([gs.means, [gs.scales, gs.rotations, gs.opacities, gs.sh_coeffs]], config)
@@ -190,14 +201,18 @@ def run_stage1(
             config.fov_radians,
         )
 
-        # Run SDS step (backward through differentiable gsplat renderer)
-        sds_step(gs, cam, identity, prior_model, config)
+        # SDS loss (differentiable through gsplat + VAE)
+        sds_loss = sds_step(gs, cam, identity, prior_model, config)
 
-        # Connectivity loss (logged but not backpropped - prevents graph conflicts)
+        # Connectivity loss (independent graph from SDS)
         conn_loss = compute_connectivity_loss(
             gs.means, gs.vertex_id, initial_offsets,
             k=config.k_neighbors, weight=config.weight,
         )
+
+        # Combine losses and backward ONCE — avoids graph conflicts
+        total_loss = sds_loss + conn_loss
+        total_loss.backward()
 
         # Apply gradient mask (face-only)
         for field in ['means', 'scales', 'rotations', 'opacities', 'sh_coeffs']:
@@ -215,8 +230,9 @@ def run_stage1(
                           config, i, "Stage1")
 
         if i % max(config.log_interval, 1) == 0:
-            print(f"  [OPT] Stage 1 iter {i}/{n_iter}: conn={conn_loss.item():.6f}, "
-                  f"opacity={pixel_intensity:.4f}")
+            gn = gs.means.grad.norm().item() if gs.means.grad is not None else 0.0
+            print(f"  [OPT] Stage 1 iter {i}/{n_iter}: conn={conn_loss.item():.8f}, "
+                  f"opac={pixel_intensity:.4f}, grad_norm={gn:.6f}")
 
     writer.close()
     save_gaussian_state(gs, config.checkpoint_path)
@@ -291,18 +307,16 @@ def run_stage2(
             config.fov_radians,
         )
 
-        zero_grad(optimizer)
-
-        # SDS step - primary gradient signal via differentiable gsplat
-        sds_step(gs, cam, identity, prior_model, config)
-
-        # Connectivity loss (logged only - prevents graph conflicts with gsplat)
+        # SDS loss + connectivity loss → single backward
+        sds_loss = sds_step(gs, cam, identity, prior_model, config)
         conn_loss = compute_connectivity_loss(
             gs.means, gs.vertex_id, initial_offsets,
             k=config.k_neighbors, weight=config.weight,
         )
+        (sds_loss + conn_loss).backward()
 
         optimizer.step()
+        zero_grad(optimizer)
 
         pixel_intensity = torch.sigmoid(gs.opacities).mean().item()
         _divergence_guard(
@@ -312,8 +326,9 @@ def run_stage2(
         )
 
         if i % max(config.log_interval, 1) == 0:
-            print(f"  [OPT] Stage 2 iter {i}/{n_iter}: conn={conn_loss.item():.6f}, "
-                  f"opacity={pixel_intensity:.4f}")
+            gn = gs.means.grad.norm().item() if gs.means.grad is not None else 0.0
+            print(f"  [OPT] Stage 2 iter {i}/{n_iter}: conn={conn_loss.item():.8f}, "
+                  f"opac={pixel_intensity:.4f}, grad_norm={gn:.6f}")
 
     writer.close()
     save_gaussian_state(gs, config.checkpoint_path)

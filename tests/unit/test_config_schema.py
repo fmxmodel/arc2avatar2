@@ -17,7 +17,7 @@ class TestConfigSchema(unittest.TestCase):
         self.assertEqual(cfg.fov_radians, 0.4)
         self.assertEqual(cfg.azimuth_range_deg, (-110.0, 110.0))
         self.assertEqual(cfg.pitch_range_deg, (60.0, 90.0))
-        self.assertEqual(cfg.guidance_scale, 5.0)
+        self.assertEqual(cfg.guidance_scale, 7.0)
 
     def test_stage2_config_defaults(self):
         """Test Stage2Config defaults."""
@@ -45,10 +45,10 @@ class TestConfigSchema(unittest.TestCase):
         self.assertTrue(any("iterations" in e.field_path for e in errors))
 
     def test_resolve_config_fast_debug(self):
-        """Test experiment override works (fast_debug: 100 Stage-1 iter)."""
+        """Test experiment override works (fast_debug: 500 Stage-1 iter)."""
         from src.config.schema import resolve_config
         cfg = resolve_config(experiment="fast_debug")
-        self.assertEqual(cfg.stage1.iterations, 100)
+        self.assertEqual(cfg.stage1.iterations, 500)
 
     def test_resolve_config_cli_override(self):
         """Test CLI override takes precedence."""

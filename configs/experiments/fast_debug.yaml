@@ -1,15 +1,15 @@
 # Arc2Avatar — Full calibration run
-# Reduced from paper defaults (500/2000) for faster turnaround
+# Approaching paper defaults for meaningful convergence
 
 stage1:
-  iterations: 100
+  iterations: 500
 
 stage2:
-  iterations: 200
+  iterations: 1000
 
 animation:
-  expressions: ["neutral"]
-  refinement_iterations: 5
+  expressions: ["neutral", "smile", "open_mouth", "raised_brow"]
+  refinement_iterations: 200
 
 manual_approval:
   require_approval_after_finetune: false
