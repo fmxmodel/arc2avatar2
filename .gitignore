@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+checkpoints/_archive/*
+!checkpoints/_archive/.gitkeep
+logs/structured/*
+!logs/structured/.gitkeep
+logs/artifacts/*
+!logs/artifacts/.gitkeep
+run_state.json
+*.tmp.*
+runpod_ssh_key
+runpod_ssh_key.pub
