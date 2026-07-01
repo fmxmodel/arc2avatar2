@@ -154,11 +154,13 @@ def run_stage1(
     os.makedirs("outputs/renders/stage1", exist_ok=True)
 
     gs = initial_state
-    # Move Gaussian state tensors to target device
+    # Move and detach (make leaf tensors for optimizer)
     for field in ['means', 'scales', 'rotations', 'opacities', 'sh_coeffs', 'vertex_id']:
         t = getattr(gs, field, None)
-        if t is not None and t.device != device:
-            setattr(gs, field, t.to(device))
+        if t is not None:
+            t = t.detach().to(device)
+            t.requires_grad_(True)
+            setattr(gs, field, t)
 
     n_vertices = gs.vertex_id.shape[0]
     # Face mask: approximate facial region (top 55% of vertices, excludes neck)
@@ -258,11 +260,13 @@ def run_stage2(
     os.makedirs("outputs/renders/stage2", exist_ok=True)
 
     gs = stage1_state
-    # Move Gaussian state tensors to target device
+    # Move and detach Gaussian state tensors (make leaf tensors for optimizer)
     for field in ['means', 'scales', 'rotations', 'opacities', 'sh_coeffs', 'vertex_id']:
         t = getattr(gs, field, None)
-        if t is not None and t.device != device:
-            setattr(gs, field, t.to(device))
+        if t is not None:
+            t = t.detach().to(device)
+            t.requires_grad_(True)
+            setattr(gs, field, t)
 
     # Build optimizer for ALL parameters (pos vs color groups)
     optimizer = build_optimizer(
