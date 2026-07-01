@@ -159,7 +159,8 @@ def run_stage1(
         t = getattr(gs, field, None)
         if t is not None:
             t = t.detach().to(device)
-            t.requires_grad_(True)
+            if t.is_floating_point():
+                t.requires_grad_(True)
             setattr(gs, field, t)
 
     n_vertices = gs.vertex_id.shape[0]
@@ -265,7 +266,8 @@ def run_stage2(
         t = getattr(gs, field, None)
         if t is not None:
             t = t.detach().to(device)
-            t.requires_grad_(True)
+            if t.is_floating_point():
+                t.requires_grad_(True)
             setattr(gs, field, t)
 
     # Build optimizer for ALL parameters (pos vs color groups)
