@@ -277,7 +277,6 @@ def step_animation(config) -> None:
         return
 
     gs = load_gaussian_state(config.stage2.checkpoint_path)
-    flame_mesh = load_flame_mesh(config.data_prep.flame_loaded_path) if os.path.exists(config.data_prep.flame_loaded_path) else None
     identity = load_identity_embedding(
         config.data_prep.id_embedding_path,
         config.data_prep.id_embedding_json_path,
@@ -288,19 +287,19 @@ def step_animation(config) -> None:
     for expr_name in config.animation.expressions:
         print(f"  Expression: {expr_name}")
 
-# Create expression state (FaceVerse ARKit blendshapes)
-                    expr = ExpressionState(
-                        name=expr_name,
-                        faceverse_expr_coeffs=torch.zeros(52),
-                    )
+        # Create expression state (FaceVerse ARKit blendshapes)
+        expr = ExpressionState(
+            name=expr_name,
+            faceverse_expr_coeffs=torch.zeros(52),
+        )
 
-                    # Set expression-specific coefficients (ARKit indices)
-                    if expr_name == "smile":
-                        expr.faceverse_expr_coeffs[4] = 0.5  # cheekSquint_L
-                    elif expr_name == "open_mouth":
-                        expr.faceverse_expr_coeffs[21] = 0.6  # jawOpen
-                    elif expr_name == "raised_brow":
-                        expr.faceverse_expr_coeffs[2] = 0.3  # browInnerUp
+        # Set expression-specific coefficients (ARKit indices)
+        if expr_name == "smile":
+            expr.faceverse_expr_coeffs[4] = 0.5  # cheekSquint_L
+        elif expr_name == "open_mouth":
+            expr.faceverse_expr_coeffs[21] = 0.6  # jawOpen
+        elif expr_name == "raised_brow":
+            expr.faceverse_expr_coeffs[2] = 0.3  # browInnerUp
 
         # Directive 25: Detect if refinement needed
         needs_refinement = detect_mouth_opening(expr, config.animation)
@@ -313,6 +312,7 @@ def step_animation(config) -> None:
 
             # Directive 27: Check identity preservation
             if identity is not None:
+                from src.sds.api import sample_camera
                 cam = sample_camera((0, 0), (60, 60), 0.4, 2.0)
                 rendered = render(gs, cam)
                 similarity = check_identity_preservation(
