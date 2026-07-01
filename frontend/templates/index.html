@@ -4,22 +4,25 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Arc2Avatar — 3D Avatar from Photo</title>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
          background: #0f0f13; color: #e0e0e0; overflow: hidden; height: 100vh; }
-  
   #app { display: flex; height: 100vh; }
-  
-  /* Sidebar */
   #sidebar { width: 380px; background: #1a1a24; padding: 24px; display: flex;
              flex-direction: column; border-right: 1px solid #2a2a3a; overflow-y: auto; }
   #sidebar h1 { font-size: 22px; font-weight: 700; margin-bottom: 4px; 
                 background: linear-gradient(135deg, #667eea, #764ba2); -webkit-background-clip: text;
                 -webkit-text-fill-color: transparent; }
   #sidebar .subtitle { color: #888; font-size: 13px; margin-bottom: 24px; }
-  
-  /* Upload zone */
   #upload-zone { border: 2px dashed #3a3a4a; border-radius: 12px; padding: 32px 20px;
                  text-align: center; cursor: pointer; transition: all 0.3s;
                  background: #12121c; margin-bottom: 16px; }
@@ -31,8 +34,6 @@
   #upload-zone .text { color: #888; font-size: 14px; }
   #upload-zone .text strong { color: #ccc; }
   #file-input { display: none; }
-  
-  /* Buttons */
   .btn { width: 100%; padding: 12px; border: none; border-radius: 8px; font-size: 15px;
          font-weight: 600; cursor: pointer; transition: all 0.3s; margin-bottom: 8px; }
   .btn-primary { background: linear-gradient(135deg, #667eea, #764ba2); color: white; }
@@ -40,130 +41,116 @@
   .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
   .btn-secondary { background: #2a2a3a; color: #ccc; }
   .btn-secondary:hover { background: #3a3a4a; }
-  
-  /* Status */
   #status { padding: 12px; border-radius: 8px; margin-top: 8px; font-size: 13px;
             background: #12121c; border: 1px solid #2a2a3a; min-height: 40px; }
   #status .label { color: #888; margin-bottom: 4px; }
   #status .value { color: #e0e0e0; font-family: monospace; }
-  #status .progress-bar { height: 4px; background: #2a2a3a; border-radius: 2px; margin-top: 8px; overflow: hidden; }
-  #status .progress-bar .fill { height: 100%; background: linear-gradient(90deg, #667eea, #764ba2);
-                                 border-radius: 2px; transition: width 0.5s; width: 0%; }
-  
-  /* Face info */
+  #status .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #3a3a4a;
+                      border-top-color: #667eea; border-radius: 50%; animation: spin 0.8s linear infinite;
+                      margin-right: 8px; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #viewport { flex: 1; position: relative; background: #0a0a0f; }
+  #viewport canvas { display: block; }
+  #viewport .loader { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+                      text-align: center; color: #555; }
+  #viewport .loader .sp { display: inline-block; width: 40px; height: 40px; border: 3px solid #2a2a3a;
+                          border-top-color: #667eea; border-radius: 50%; animation: spin 0.8s linear infinite; }
   #face-info { margin-top: 8px; padding: 12px; border-radius: 8px; font-size: 12px;
                background: #12121c; border: 1px solid #2a2a3a; display: none; }
   #face-info .row { display: flex; justify-content: space-between; padding: 2px 0; }
   #face-info .row .key { color: #888; }
   #face-info .row .val { color: #4ade80; font-family: monospace; }
-  
-  /* 3D Viewport */
-  #viewport { flex: 1; position: relative; background: #0a0a0f; }
-  #viewport canvas { display: block; width: 100%; height: 100%; }
-  #viewport .hint { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
-                    color: #555; font-size: 12px; pointer-events: none; }
-  
-  /* Responsive */
-  @media (max-width: 768px) {
-    #app { flex-direction: column; }
-    #sidebar { width: 100%; max-height: 50vh; }
-  }
-
-  /* Spinner */
-  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #3a3a4a;
-             border-top-color: #667eea; border-radius: 50%; animation: spin 0.8s linear infinite;
-             margin-right: 8px; vertical-align: middle; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (max-width: 768px) { #app { flex-direction: column; } #sidebar { width: 100%; max-height: 50vh; } }
 </style>
 </head>
 <body>
 <div id="app">
-  <!-- Sidebar -->
   <div id="sidebar">
     <h1>✦ Arc2Avatar</h1>
     <div class="subtitle">Single photo → animatable 3D head avatar</div>
-
     <div id="upload-zone" onclick="document.getElementById('file-input').click()">
       <div class="icon">📸</div>
       <div class="text"><strong>Click to upload</strong> or drag a photo here</div>
       <div class="text" style="font-size:12px;margin-top:4px">Frontal face photo, JPG or PNG</div>
       <img id="preview" style="display:none;margin-top:12px">
     </div>
-    <input type="file" id="file-input" accept="image/*" onchange="onFileSelect(event)">
-
-    <button class="btn btn-primary" id="btn-generate" disabled onclick="startGeneration()">
-      ✦ Generate 3D Avatar
-    </button>
-    <button class="btn btn-secondary" id="btn-download" style="display:none" onclick="downloadPLY()">
-      ⬇ Download PLY
-    </button>
-
+    <input type="file" id="file-input" accept="image/*">
+    <button class="btn btn-primary" id="btn-generate" disabled>✦ Generate 3D Avatar</button>
+    <button class="btn btn-secondary" id="btn-download" style="display:none">⬇ Download PLY</button>
     <div id="face-info"></div>
-
-    <div id="status">
-      <div class="label">Status</div>
-      <div class="value" id="status-text">Waiting for photo...</div>
-      <div class="progress-bar"><div class="fill" id="progress-fill"></div></div>
-    </div>
+    <div id="status"><div class="label">Status</div><div class="value" id="status-text">Ready</div></div>
   </div>
-
-  <!-- 3D Viewport -->
   <div id="viewport">
-    <div class="hint">🖱 Drag to rotate · Scroll to zoom</div>
+    <div class="loader" id="viewer-loader"><div class="sp"></div><div style="margin-top:12px">Loading 3D viewer...</div></div>
   </div>
 </div>
 
-<!-- Three.js -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/PLYLoader.js"></script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
 
-<script>
-let currentJobId = null;
-let currentPlyUrl = null;
-let scene, camera, renderer, controls;
+const container = document.getElementById('viewport');
+const loaderEl = document.getElementById('viewer-loader');
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0a0f);
+
+const camera = new THREE.PerspectiveCamera(45, container.clientWidth/container.clientHeight, 0.1, 100);
+camera.position.set(2, 1, 3);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(container.clientWidth, container.clientHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+container.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.target.set(0, 0, 0);
+controls.update();
+
+const ambient = new THREE.AmbientLight(0x404060, 0.6);
+scene.add(ambient);
+const d1 = new THREE.DirectionalLight(0xffffff, 0.8);
+d1.position.set(1, 2, 1); scene.add(d1);
+const d2 = new THREE.DirectionalLight(0x8888ff, 0.3);
+d2.position.set(-1, -1, -1); scene.add(d2);
+
+const grid = new THREE.GridHelper(3, 20, 0x333355, 0x222244);
+grid.position.y = -0.5;
+scene.add(grid);
+
+loaderEl.style.display = 'none';
+
 let pointCloud = null;
 
-// ── Three.js Setup ──────────────────────────────────────────────
-function initScene() {
-  const container = document.getElementById('viewport');
-  const w = container.clientWidth;
-  const h = container.clientHeight;
+function loadPLY(url) {
+  if (pointCloud) { scene.remove(pointCloud); pointCloud.geometry.dispose(); pointCloud.material.dispose(); }
+  loaderEl.textContent = 'Loading 3D model...';
+  loaderEl.style.display = 'block';
 
-  scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x0a0a0f);
+  const l = new PLYLoader();
+  l.load(url, (geo) => {
+    geo.computeVertexNormals();
+    const mat = new THREE.PointsMaterial({
+      size: 0.008, vertexColors: true, sizeAttenuation: true,
+      transparent: true, opacity: 0.9,
+    });
+    pointCloud = new THREE.Points(geo, mat);
+    scene.add(pointCloud);
 
-  camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100);
-  camera.position.set(2, 1, 3);
+    geo.computeBoundingSphere();
+    const r = geo.boundingSphere.radius;
+    const d = r * 2.5;
+    camera.position.set(d*0.7, d*0.3, d*0.7);
+    controls.target.set(0, 0, 0);
+    controls.update();
 
-  renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(w, h);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  container.appendChild(renderer.domElement);
-
-  controls = new THREE.OrbitControls(camera, renderer.domElement);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.05;
-  controls.target.set(0, 0, 0);
-  controls.update();
-
-  // Lights
-  const ambient = new THREE.AmbientLight(0x404060, 0.6);
-  scene.add(ambient);
-  const dir1 = new THREE.DirectionalLight(0xffffff, 0.8);
-  dir1.position.set(1, 2, 1);
-  scene.add(dir1);
-  const dir2 = new THREE.DirectionalLight(0x8888ff, 0.3);
-  dir2.position.set(-1, -1, -1);
-  scene.add(dir2);
-
-  // Grid helper
-  const grid = new THREE.GridHelper(3, 20, 0x333355, 0x222244);
-  grid.position.y = -0.5;
-  scene.add(grid);
-
-  animate();
-  window.addEventListener('resize', onResize);
+    loaderEl.style.display = 'none';
+  }, undefined, (err) => {
+    loaderEl.textContent = '❌ Failed to load: ' + err.message;
+  });
 }
 
 function animate() {
@@ -171,71 +158,14 @@ function animate() {
   controls.update();
   renderer.render(scene, camera);
 }
+animate();
 
-function onResize() {
-  const container = document.getElementById('viewport');
-  const w = container.clientWidth;
-  const h = container.clientHeight;
+window.addEventListener('resize', () => {
+  const w = container.clientWidth, h = container.clientHeight;
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer.setSize(w, h);
-}
-
-// ── Load PLY into scene ─────────────────────────────────────────
-function loadPLY(url) {
-  if (pointCloud) { scene.remove(pointCloud); pointCloud.geometry.dispose(); pointCloud.material.dispose(); }
-
-  const loader = new THREE.PLYLoader();
-  loader.load(url, function(geometry) {
-    geometry.computeVertexNormals();
-
-    const material = new THREE.PointsMaterial({
-      size: 0.008,
-      vertexColors: true,
-      sizeAttenuation: true,
-      transparent: true,
-      opacity: 0.9,
-      blending: THREE.NormalBlending,
-      depthWrite: true,
-    });
-
-    pointCloud = new THREE.Points(geometry, material);
-    scene.add(pointCloud);
-
-    // Auto-center and scale
-    geometry.computeBoundingSphere();
-    const center = geometry.boundingSphere.center;
-    const radius = geometry.boundingSphere.radius;
-    pointCloud.position.sub(center);
-    
-    // Fit camera
-    const dist = radius * 2.5;
-    camera.position.set(dist * 0.7, dist * 0.3, dist * 0.7);
-    controls.target.set(0, 0, 0);
-    controls.update();
-
-    document.querySelector('#viewport .hint').style.display = 'block';
-  });
-}
-
-// ── Upload & Pipeline ────────────────────────────────────────────
-function onFileSelect(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  
-  const reader = new FileReader();
-  reader.onload = function(ev) {
-    const preview = document.getElementById('preview');
-    preview.src = ev.target.result;
-    preview.style.display = 'block';
-    document.querySelector('#upload-zone .icon').style.display = 'none';
-    document.querySelector('#upload-zone .text').style.display = 'none';
-    document.getElementById('upload-zone').classList.add('has-image');
-    document.getElementById('btn-generate').disabled = false;
-    setStatus('Photo loaded. Ready to generate!', 0);
-  };
-  reader.readAsDataURL(file);
-}
+});
 
 // Drag & drop
 const zone = document.getElementById('upload-zone');
@@ -244,88 +174,86 @@ zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
 zone.addEventListener('drop', e => {
   e.preventDefault(); zone.classList.remove('dragover');
   const file = e.dataTransfer.files[0];
-  if (file) { document.getElementById('file-input').files = e.dataTransfer.files; onFileSelect({target: {files: [file]}}); }
+  if (file) { document.getElementById('file-input').files = e.dataTransfer.files; handleFile(file); }
 });
 
-function setStatus(text, progress) {
-  document.getElementById('status-text').innerHTML = text;
-  document.getElementById('progress-fill').style.width = progress + '%';
+document.getElementById('file-input').addEventListener('change', e => {
+  if (e.target.files[0]) handleFile(e.target.files[0]);
+});
+
+function handleFile(file) {
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    const p = document.getElementById('preview');
+    p.src = ev.target.result;
+    p.style.display = 'block';
+    document.querySelector('#upload-zone .icon').style.display = 'none';
+    document.querySelector('#upload-zone .text').style.display = 'none';
+    document.getElementById('upload-zone').classList.add('has-image');
+    document.getElementById('btn-generate').disabled = false;
+  };
+  reader.readAsDataURL(file);
 }
 
-async function startGeneration() {
+function setStatus(text) {
+  document.getElementById('status-text').innerHTML = text;
+}
+
+document.getElementById('btn-generate').addEventListener('click', startGen);
+document.getElementById('btn-download').addEventListener('click', () => {
+  if (window.currentPlyUrl) window.open(window.currentPlyUrl, '_blank');
+});
+
+async function startGen() {
   const file = document.getElementById('file-input').files[0];
   if (!file) return;
-
   const btn = document.getElementById('btn-generate');
-  btn.disabled = true;
-  btn.textContent = '✦ Generating...';
+  btn.disabled = true; btn.textContent = '✦ Generating...';
   document.getElementById('btn-download').style.display = 'none';
   document.getElementById('face-info').style.display = 'none';
+  setStatus('<span class="spinner"></span> Uploading...');
 
-  setStatus('<span class="spinner"></span>Uploading photo...', 10);
-
-  const form = new FormData();
-  form.append('photo', file);
-
+  const fd = new FormData();
+  fd.append('photo', file);
   try {
-    const resp = await fetch('/api/upload', { method: 'POST', body: form });
-    const data = await resp.json();
-    currentJobId = data.job_id;
+    const r = await fetch('/api/upload', { method: 'POST', body: fd });
+    const d = await r.json();
+    window.currentJobId = d.job_id;
     pollStatus();
-  } catch(e) {
-    setStatus('❌ Upload failed: ' + e.message, 0);
-    btn.disabled = false; btn.textContent = '✦ Generate 3D Avatar';
-  }
+  } catch(e) { setStatus('❌ Upload failed'); btn.disabled = false; btn.textContent = '✦ Retry'; }
 }
 
 async function pollStatus() {
-  if (!currentJobId) return;
-  
+  if (!window.currentJobId) return;
   try {
-    const resp = await fetch('/api/status/' + currentJobId);
-    const job = await resp.json();
-    
-    if (job.status === 'failed') {
-      setStatus('❌ ' + (job.progress || 'Pipeline failed'), 0);
-      document.getElementById('btn-generate').disabled = false;
-      document.getElementById('btn-generate').textContent = '✦ Retry';
-      return;
-    }
+    const r = await fetch('/api/status/' + window.currentJobId);
+    const j = await r.json();
+    if (j.status === 'failed') { setStatus('❌ ' + (j.progress || 'Failed')); resetBtn(); return; }
+    setStatus(j.progress || 'Processing...');
 
-    setStatus(job.progress || 'Processing...', job.status === 'running' ? 50 : 90);
-
-    if (job.face_info) {
+    if (j.face_info) {
       const fi = document.getElementById('face-info');
       fi.style.display = 'block';
-      fi.innerHTML = `
-        <div class="row"><span class="key">Face detected</span><span class="val">✅</span></div>
-        <div class="row"><span class="key">Bounding box</span><span class="val">${job.face_info.bbox_size}px</span></div>
-      `;
+      fi.innerHTML = '<div class="row"><span class="key">Face detected</span><span class="val">✅</span></div>' +
+        '<div class="row"><span class="key">Bounding box</span><span class="val">' + j.face_info.bbox_size + 'px</span></div>';
     }
 
-    if (job.status === 'completed' && job.ply_url) {
-      setStatus('✅ 3D avatar generated!', 100);
-      document.getElementById('btn-generate').disabled = false;
-      document.getElementById('btn-generate').textContent = '✦ Generate Again';
+    if (j.status === 'completed' && j.ply_url) {
+      setStatus('✅ 3D avatar ready!');
+      resetBtn();
       document.getElementById('btn-download').style.display = 'block';
-      currentPlyUrl = job.ply_url;
-      loadPLY(job.ply_url);
+      window.currentPlyUrl = j.ply_url;
+      loadPLY(j.ply_url);
       return;
     }
-
     setTimeout(pollStatus, 1000);
-  } catch(e) {
-    setStatus('⚠️ Status check failed, retrying...', 0);
-    setTimeout(pollStatus, 2000);
-  }
+  } catch(e) { setTimeout(pollStatus, 2000); }
 }
 
-function downloadPLY() {
-  if (currentPlyUrl) window.open(currentPlyUrl, '_blank');
+function resetBtn() {
+  const btn = document.getElementById('btn-generate');
+  btn.disabled = false; btn.textContent = '✦ Generate Again';
 }
-
-// ── Init ─────────────────────────────────────────────────────────
-initScene();
 </script>
 </body>
 </html>
