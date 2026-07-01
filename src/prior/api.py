@@ -22,15 +22,23 @@ class PoseConditionedUNet(nn.Module):
 
     Encodes camera pose as [sin(az), cos(az), sin(el), cos(el)] and
     injects via a learned cross-attention projection.
+    Also projects ID embedding (512) to cross-attention dim (768).
     """
 
-    def __init__(self, base_unet, pose_dim: int = 4, cross_attn_dim: int = 768):
+    def __init__(self, base_unet, pose_dim: int = 4, cross_attn_dim: int = 768, id_dim: int = 512):
         super().__init__()
         self.base_unet = base_unet
+        self.id_proj = nn.Linear(id_dim, cross_attn_dim)
+        self.id_norm = nn.LayerNorm(cross_attn_dim)
         self.pose_proj = nn.Linear(pose_dim, cross_attn_dim)
         self.pose_norm = nn.LayerNorm(cross_attn_dim)
 
     def forward(self, noisy_latents, timesteps, encoder_hidden_states, pose_embedding=None):
+        # Project ID embedding from 512 -> cross_attn_dim
+        if encoder_hidden_states is not None:
+            if encoder_hidden_states.dim() == 3 and encoder_hidden_states.shape[-1] == 512:
+                encoder_hidden_states = self.id_norm(self.id_proj(encoder_hidden_states))
+
         if pose_embedding is not None:
             # pose_embedding: [B, 4] or [4] -> project to cross-attn dim
             if pose_embedding.dim() == 1:
