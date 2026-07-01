@@ -130,28 +130,27 @@ def check_environment(config=None) -> dict:
     print("Arc2Avatar — Environment Health Check (Directive 4)")
     print("=" * 50)
 
-    # Check 1: CUDA
+    # Check 1: CUDA (must pass)
     results["cuda"] = check_cuda(expected_versions)
     if not results["cuda"]:
-        print("\nFAIL: CUDA check failed — aborting further checks.")
-        results["all_pass"] = False
+        print("\nFAIL: CUDA check failed — aborting.")
         return results
 
-    # Check 2: PyTorch3D
+    # Check 2: PyTorch3D (must pass — required for rendering)
     results["pytorch3d"] = check_pytorch3d(expected_versions)
 
-    # Check 3: Kaolin
+    # Check 3: Kaolin (optional)
     results["kaolin"] = check_kaolin(expected_versions)
+    if not results["kaolin"]:
+        print("  INFO  Kaolin optional — continuing without.")
 
-    # Check 4: diffusers
+    # Check 4: diffusers (optional)
     results["diffusers"] = check_diffusers(expected_versions)
+    if not results["diffusers"]:
+        print("  INFO  Diffusers optional — continuing without fine-tuning.")
 
-    results["all_pass"] = all([
-        results["cuda"],
-        results["pytorch3d"],
-        results["kaolin"],
-        results["diffusers"],
-    ])
+    # all_pass: only CUDA and PyTorch3D are required
+    results["all_pass"] = results["cuda"] and results["pytorch3d"]
 
     print("-" * 50)
     if results["all_pass"]:

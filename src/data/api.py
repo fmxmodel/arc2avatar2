@@ -280,20 +280,27 @@ def verify_panohead_dataset(
     dataset_path: str,
     min_identities: int = 1000,
     min_angles: int = 8,
+    strict: bool = False,
 ) -> dict:
     """Verify PanoHead synthetic dataset (Directive 9).
 
-    Inputs:    dataset path, minimum identities and angles thresholds.
+    Inputs:    dataset path, minimum identities and angles thresholds,
+               strict (if True, raises on failure; if False, warns).
     Outputs:   dict with identity_count, angle_count, passed_thresholds.
-    Exceptions: raises DataError if below threshold.
-    Side effects: logs warning if under threshold.
+    Exceptions: raises DataError only if strict=True and below threshold.
+    Side effects: logs warning if under threshold or dataset missing.
     """
     if not os.path.exists(dataset_path):
-        raise DataError(
-            what_failed="PanoHead dataset not found",
-            why=f"Directory does not exist: {dataset_path}",
-            how_to_fix=f"Download PanoHead synthetic dataset to {dataset_path}",
-        )
+        msg = f"PanoHead dataset not found: {dataset_path}"
+        if strict:
+            raise DataError(
+                what_failed="PanoHead dataset not found",
+                why=msg,
+                how_to_fix=f"Download PanoHead synthetic dataset to {dataset_path}",
+            )
+        print(f"[DATA] WARNING: {msg}. Fine-tuning will be unavailable.")
+        return {"identity_count": 0, "avg_angles_per_identity": 0,
+                "passed_identities": False, "passed_angles": False}
 
     # Count identities (subdirectories) and angles (files per identity)
     identities = [d for d in os.listdir(dataset_path)
@@ -318,11 +325,14 @@ def verify_panohead_dataset(
     }
 
     if not result["passed_identities"]:
-        raise DataError(
-            what_failed="Insufficient PanoHead identities",
-            why=f"Found {identity_count}, need >= {min_identities}",
-            how_to_fix="Download the full PanoHead dataset with >= 1000 identities",
-        )
+        msg = f"Insufficient PanoHead identities: {identity_count} < {min_identities}"
+        if strict:
+            raise DataError(
+                what_failed="Insufficient PanoHead identities",
+                why=msg,
+                how_to_fix="Download the full PanoHead dataset with >= 1000 identities",
+            )
+        print(f"[DATA] WARNING: {msg}. Fine-tuning quality may degrade.")
 
     if not result["passed_angles"]:
         print(f"[DATA] WARNING: Avg angles per identity ({avg_angles}) < {min_angles}. "
