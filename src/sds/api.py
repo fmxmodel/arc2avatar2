@@ -238,53 +238,36 @@ def sds_step(
         w_t = 1.0  # Standard SDS weighting
 
         if vae is not None and unet is not None and hasattr(unet, 'base_unet'):
-            # Full diffusion pipeline
-            # Normalize rendered to [-1, 1]
+            # Full diffusion pipeline with VAE gradients
             rendered_norm = rendered * 2.0 - 1.0
-            with torch.no_grad():
-                latents = vae.encode(rendered_norm).latent_dist.sample()
-            latents = latents * 0.18215  # SD scaling factor
+
+            # Encode with VAE (gradients flow through to rendered)
+            latents = vae.encode(rendered_norm).latent_dist.sample() * 0.18215
 
             # Add noise in latent space
             t = torch.randint(50, 950, (1,), device=device).long()
             noise = torch.randn_like(latents)
-            noised = latents + noise * (t.float() / 1000.0)  # Simple schedule
+            noised = latents + noise * (t.float() / 1000.0)
 
             # Predict noise
-            id_vec = identity_embedding.vector.unsqueeze(0).unsqueeze(0).to(device)  # [1, 1, 512]
-            pose_enc = encode_pose_for_sds(camera).to(device)  # [4]
-            noise_pred = unet(
-                noised, t,
-                encoder_hidden_states=id_vec,
-                pose_embedding=pose_enc,
-            )
-            if isinstance(noise_pred, dict):
-                noise_pred = noise_pred.get("sample", noise)
+            id_vec = identity_embedding.vector.unsqueeze(0).unsqueeze(0).to(device)
+            pose_enc = encode_pose_for_sds(camera).to(device)
+            with torch.no_grad():
+                pred = unet(noised, t, encoder_hidden_states=id_vec, pose_embedding=pose_enc)
+            noise_pred = pred["sample"] if isinstance(pred, dict) else pred
 
-            # SDS gradient  
-            grad_latent = w_t * guidance_scale * (noise_pred - noise)
+            # SDS loss in latent space (gradients flow through VAE to renderer)
+            loss = (w_t * guidance_scale * ((noise_pred - noise) * noised).sum())
+            loss.backward()
         else:
             # Fallback: simple image-space gradient
             t = torch.randint(50, 950, (1,), device=device).long()
             alpha = (1000 - t.float()) / 1000.0
             noise = torch.randn_like(rendered)
+            noised = rendered * alpha + noise * (1 - alpha)
             noise_pred = noise.clone()
-            grad_latent = w_t * guidance_scale * (noise_pred - noise)
-
-        # Step 5: Backprop through VAE decoder + renderer
-        if vae is not None and hasattr(vae, 'decode'):
-            with torch.enable_grad():
-                # Decode gradient back to image space
-                grad_latent = grad_latent / 0.18215
-                # Simple gradient approximation: gradient flows through VAE decoder
-                # Reconstruct with gradients
-                decoded = vae.decode(latents.detach() + grad_latent).sample
-                # Backprop through renderer
-                img_loss = (decoded - rendered_norm.detach()).abs().mean()
-                img_loss.backward()
-        else:
-            rendered.backward(gradient=grad_latent)
-
+            grad = w_t * guidance_scale * (noise_pred - noise)
+            rendered.backward(gradient=grad)
         return grad_latent
 
     except Exception as e:
