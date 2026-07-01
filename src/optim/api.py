@@ -191,14 +191,20 @@ def run_stage1(
             config.fov_radians,
         )
 
-        # SDS step (computes gradients via differentiable gsplat renderer)
-        sds_step(gs, cam, identity, prior_model, config)
+        # Zero gradients before each step
+        zero_grad(optimizer)
 
-        # Connectivity regularizer loss
+        # --- Combine SDS + connectivity loss ---
+        # 1. Compute connectivity loss first (creates its own graph)  
         conn_loss = compute_connectivity_loss(
             gs.means, gs.vertex_id, initial_offsets,
             k=config.k_neighbors, weight=config.weight,
         )
+
+        # 2. Run SDS step (backward through render, adds grad to means)
+        sds_step(gs, cam, identity, prior_model, config)
+
+        # 3. Backward connectivity loss (accumulates grad on means)
         conn_loss.backward()
 
         # Apply gradient mask (face-only)
@@ -209,7 +215,6 @@ def run_stage1(
 
         # Adam step
         optimizer.step()
-        zero_grad(optimizer)
 
         # Divergence guard
         pixel_intensity = torch.sigmoid(gs.opacities).mean().item()
@@ -295,16 +300,16 @@ def run_stage2(
             config.fov_radians,
         )
 
-        sds_step(gs, cam, identity, prior_model, config)
+        zero_grad(optimizer)
 
         conn_loss = compute_connectivity_loss(
             gs.means, gs.vertex_id, initial_offsets,
             k=config.k_neighbors, weight=config.weight,
         )
-        conn_loss.backward()
 
+        sds_step(gs, cam, identity, prior_model, config)
+        conn_loss.backward()
         optimizer.step()
-        zero_grad(optimizer)
 
         pixel_intensity = torch.sigmoid(gs.opacities).mean().item()
         _divergence_guard(
