@@ -14,12 +14,12 @@ import cv2
 import numpy as np
 import torch
 
+from src.config.schema import FLAME_CANONICAL_VERT_COUNT
 from src.contracts.schemas import (
     FlameMesh,
     IdentityEmbedding,
     save_flame_mesh,
     save_identity_embedding,
-    FLAME_CANONICAL_VERT_COUNT,
 )
 from src.errors.hierarchy import DataError
 
@@ -33,8 +33,6 @@ def validate_input_image(image_path: str) -> dict:
     Exceptions: raises DataError if zero faces, >1 face, or bbox < 256x256.
     Side effects: none.
     """
-    import mediapipe as mp
-
     if not os.path.exists(image_path):
         raise DataError(
             what_failed="Input image not found",
@@ -51,19 +49,58 @@ def validate_input_image(image_path: str) -> dict:
         )
 
     h, w = img.shape[:2]
-    mp_face = mp.solutions.face_detection
-    with mp_face.FaceDetection(model_selection=1, min_detection_confidence=0.5) as detector:
-        rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-        results = detector.process(rgb)
 
-    if results.detections is None or len(results.detections) == 0:
+    # Face detection: try mediapipe first, fallback to OpenCV Haar cascade
+    try:
+        import mediapipe as mp
+        # Try the legacy solutions API first (works on most installs)
+        if hasattr(mp, 'solutions'):
+            face_detection = mp.solutions.face_detection
+            with face_detection.FaceDetection(model_selection=1, min_detection_confidence=0.5) as detector:
+                rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                results = detector.process(rgb)
+            if results.detections and len(results.detections) > 0:
+                detections = results.detections
+                num_faces = len(detections)
+                if num_faces > 1:
+                    raise DataError(
+                        what_failed="Multiple faces detected",
+                        why=f"Found {num_faces} faces — exactly 1 required",
+                        how_to_fix="Use a photo with only one subject",
+                    )
+                det = detections[0]
+                bbox = det.location_data.relative_bounding_box
+                bbox_size_px = int(min(bbox.width * w, bbox.height * h))
+                if bbox_size_px < 256:
+                    raise DataError(
+                        what_failed="Face bounding box too small",
+                        why=f"bbox_size={bbox_size_px}px, minimum is 256px",
+                        how_to_fix="Use a higher-resolution photo or crop closer to the face",
+                    )
+                return {
+                    "passed": True, "num_faces": num_faces,
+                    "bbox_size": bbox_size_px,
+                    "face_bbox": (int(bbox.xmin * w), int(bbox.ymin * h),
+                                  int(bbox.width * w), int(bbox.height * h)),
+                }
+    except (ImportError, AttributeError, Exception) as e:
+        print(f"  [DATA] mediapipe face detection unavailable ({type(e).__name__}), "
+              f"falling back to OpenCV Haar cascade")
+
+    # Fallback: OpenCV Haar cascade
+    face_cascade = cv2.CascadeClassifier(
+        cv2.data.haarcascades + "haarcascade_frontalface_default.xml"
+    )
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, 1.1, 5, minSize=(256, 256))
+
+    num_faces = len(faces)
+    if num_faces == 0:
         raise DataError(
             what_failed="No face detected",
-            why=f"mediapipe found 0 faces in {image_path}",
+            why="Face detector found 0 faces",
             how_to_fix="Use a frontal, well-lit photo with exactly one visible face",
         )
-
-    num_faces = len(results.detections)
     if num_faces > 1:
         raise DataError(
             what_failed="Multiple faces detected",
@@ -71,10 +108,40 @@ def validate_input_image(image_path: str) -> dict:
             how_to_fix="Use a photo with only one subject",
         )
 
-    # Get the largest face bbox
-    det = results.detections[0]
-    bbox = det.location_data.relative_bounding_box
-    bbox_size = int(min(bbox.width * w, bbox.height * h))
+    x, y, fw, fh = faces[0]
+    bbox_size = min(fw, fh)
+    if bbox_size < 256:
+        raise DataError(
+            what_failed="Face bounding box too small",
+            why=f"bbox_size={bbox_size}px, minimum is 256px",
+            how_to_fix="Use a higher-resolution photo or crop closer to the face",
+        )
+
+    return {
+        "passed": True, "num_faces": num_faces,
+        "bbox_size": bbox_size,
+        "face_bbox": (int(x), int(y), int(fw), int(fh)),
+    }
+
+    if not detections or len(detections) == 0:
+        raise DataError(
+            what_failed="No face detected",
+            why=f"mediapipe found 0 faces in {image_path}",
+            how_to_fix="Use a frontal, well-lit photo with exactly one visible face",
+        )
+
+    num_faces = len(detections)
+    if num_faces > 1:
+        raise DataError(
+            what_failed="Multiple faces detected",
+            why=f"Found {num_faces} faces — exactly 1 required",
+            how_to_fix="Use a photo with only one subject",
+        )
+
+    # Get bounding box
+    det = detections[0]
+    bbox = det.bounding_box
+    bbox_size = int(min(bbox.width, bbox.height))
 
     if bbox_size < 256:
         raise DataError(
@@ -87,8 +154,7 @@ def validate_input_image(image_path: str) -> dict:
         "passed": True,
         "num_faces": num_faces,
         "bbox_size": bbox_size,
-        "face_bbox": (int(bbox.xmin * w), int(bbox.ymin * h),
-                      int(bbox.width * w), int(bbox.height * h)),
+        "face_bbox": (bbox.origin_x, bbox.origin_y, bbox.width, bbox.height),
     }
 
 
