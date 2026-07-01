@@ -230,7 +230,10 @@ def extract_identity_embedding(
 
 
 def load_faceverse_model(npy_path: str, output_pt_path: str) -> None:
-    """Load FaceVerse model from .npy (Directive 8 - FaceVerse version).
+    """Load FaceVerse simplified model from .npy (Directive 8 - FaceVerse version).
+
+    Uses the 'select_id' subset (6335 simplified vertices) from the full
+    28632-vertex model. PCA bases are sliced accordingly.
 
     Inputs:    path to faceverse_simple_v2.npy, output path for .pt.
     Outputs:   None (writes file).
@@ -248,15 +251,23 @@ def load_faceverse_model(npy_path: str, output_pt_path: str) -> None:
         import numpy as np
         fv = np.load(npy_path, allow_pickle=True).item()
 
-        Nv = fv['meanshape'].shape[0] // 3
-        V = torch.tensor(fv['meanshape'].reshape(-1, 3), dtype=torch.float32)
-        F = torch.tensor(fv['tri'].astype(np.int64), dtype=torch.int64)
-        idBase = torch.tensor(fv['idBase'], dtype=torch.float32)
-        expBase = torch.tensor(fv['exBase_52'], dtype=torch.float32) if 'exBase_52' in fv else torch.tensor(fv['exBase'], dtype=torch.float32)
-        texBase = torch.tensor(fv['texBase'], dtype=torch.float32)
-        meanshape = torch.tensor(fv['meanshape'], dtype=torch.float32)
-        meantex = torch.tensor(fv['meantex'], dtype=torch.float32)
-        point_buf = torch.tensor(fv['point_buf'].astype(np.int64), dtype=torch.int64)
+        # Simplified vertex subset (6335 verts)
+        sel = fv['select_id']  # (6335,) indices into full 28632-vertex mesh
+        Nv = len(sel)
+
+        V = torch.tensor(fv['meanshape'][sel], dtype=torch.float32)       # (Nv, 3)
+        F = torch.tensor(fv['tri_select'].astype(np.int64), dtype=torch.int64)  # (12423, 3)
+        point_buf = torch.tensor(fv['point_buf_select'].astype(np.int64), dtype=torch.int64)  # (Nv, 8)
+
+        # PCA bases: each vertex occupies 3 consecutive rows (x,y,z components)
+        idx3 = np.repeat(sel * 3, 3) + np.tile(np.arange(3), Nv)  # flattened index (Nv*3,)
+        idBase = torch.tensor(fv['idBase'][idx3], dtype=torch.float32)      # (3*Nv, 150)
+        expBase = torch.tensor(fv['exBase'][idx3], dtype=torch.float32)     # (3*Nv, 52)
+        texBase = torch.tensor(fv['texBase'][idx3], dtype=torch.float32)    # (3*Nv, 251)
+
+        # Flattened meanshape/meantex (3*Nv,) for PCA reconstruction formula
+        meanshape = torch.tensor(fv['meanshape'][sel].reshape(-1), dtype=torch.float32)
+        meantex = torch.tensor(fv['meantex'][sel].reshape(-1), dtype=torch.float32)
 
     except Exception as e:
         raise DataError(
@@ -272,7 +283,7 @@ def load_faceverse_model(npy_path: str, output_pt_path: str) -> None:
                           texBase=texBase, meanshape=meanshape,
                           meantex=meantex, point_buf=point_buf)
     save_faceverse_mesh(mesh, output_pt_path)
-    print(f"[DATA] Saved FaceVerse mesh: {output_pt_path} ({Nv} vertices)")
+    print(f"[DATA] Saved FaceVerse mesh: {output_pt_path} ({Nv} simplified vertices)")
 
 
 def verify_panohead_dataset(

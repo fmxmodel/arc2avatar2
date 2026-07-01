@@ -97,7 +97,7 @@ class TestFaceVerseMesh(unittest.TestCase):
         nv = 6335
         mesh = FaceVerseMesh(
             V=torch.randn(nv, 3),
-            F=torch.randint(0, nv, (12566, 3)),
+            F=torch.randint(0, nv, (12423, 3)),
             idBase=torch.randn(nv*3, 150),
             expBase=torch.randn(nv*3, 52),
             texBase=torch.randn(nv*3, 251),
