@@ -42,14 +42,13 @@ def _get_face_mask(n_vertices: int, device: str) -> torch.Tensor:
         return _FLAME_FACE_MASK.to(device)
 
     # FLAME face region: vertices 0-3000 approximately cover the face
-    # (scalp/ears/neck are in higher vertex ranges)
-    face_mask = torch.zeros(n_vertices, dtype=torch.bool)
+    dev = torch.device(device) if isinstance(device, str) else device
+    face_mask = torch.zeros(n_vertices, dtype=torch.bool, device=dev)
     face_mask[:3000] = True  # Facial region
-    # Also include some neck vertices for smooth blending
     face_mask[3000:3500] = True
 
-    _FLAME_FACE_MASK = face_mask
-    return face_mask.to(device)
+    _FLAME_FACE_MASK = face_mask.cpu()
+    return face_mask.to(dev)
 
 
 def _divergence_guard(
