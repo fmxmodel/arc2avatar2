@@ -77,14 +77,14 @@ def base_sanity_check(obj: Any, name: str = "object") -> ValidationReport:
     # Special checks for known types
     type_name = type(obj).__name__
 
-    if type_name == "FlameMesh":
+    if type_name in ("FlameMesh", "FaceVerseMesh"):
         # Check no degenerate faces
         if hasattr(obj, "F") and isinstance(obj.F, torch.Tensor):
             # Check for faces where all three vertices are the same
             degen = (obj.F[:, 0] == obj.F[:, 1]) & (obj.F[:, 1] == obj.F[:, 2])
             if degen.any():
                 checks["mesh_no_degenerate_faces"] = False
-                errors.append(f"FlameMesh has {degen.sum().item()} degenerate (zero-area) faces")
+                errors.append(f"{type_name} has {degen.sum().item()} degenerate (zero-area) faces")
             else:
                 checks["mesh_no_degenerate_faces"] = True
 

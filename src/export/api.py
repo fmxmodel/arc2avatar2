@@ -15,7 +15,7 @@ import torch
 
 from src.contracts.schemas import (
     GaussianState,
-    FlameMesh,
+    FaceVerseMesh,
     ExpressionState,
     RunManifest,
     save_run_manifest,
@@ -145,15 +145,15 @@ def render_turntable(gaussian_state: GaussianState, config) -> None:
 def package_animation_bundle(
     gaussian_state: GaussianState,
     expression_states: List[ExpressionState],
-    flame_mesh: FlameMesh,
+    faceverse_mesh: FaceVerseMesh,
     output_dir: str,
 ) -> None:
     """Package animation-ready bundle (Directive 30).
 
-    Includes: static Gaussian state, vertex_id correspondence, FLAME basis,
+    Includes: static Gaussian state, vertex_id correspondence, FaceVerse basis,
     refined-expression patches, and machine-readable manifest.
 
-    Inputs:    GaussianState, list of ExpressionState, FlameMesh, output directory.
+    Inputs:    GaussianState, list of ExpressionState, FaceVerseMesh, output directory.
     Outputs:   None (writes bundle files).
     Exceptions: raises ExportError on packaging failure.
     Side effects: writes animation_bundle/ with manifest.json.
@@ -165,9 +165,9 @@ def package_animation_bundle(
         static_path = os.path.join(output_dir, "static_state.pt")
         save_versioned(gaussian_state, static_path)
 
-        # Save FLAME basis
-        flame_path = os.path.join(output_dir, "flame_basis.pt")
-        save_versioned(flame_mesh, flame_path)
+        # Save FaceVerse basis
+        fv_path = os.path.join(output_dir, "faceverse_basis.pt")
+        save_versioned(faceverse_mesh, fv_path)
 
         # Build manifest
         refinement_map = {}
@@ -189,7 +189,7 @@ def package_animation_bundle(
             "schema_version": 1,
             "static_gaussian_state": "static_state.pt",
             "vertex_id_correspondence": "static_state.pt (vertex_id field)",
-            "flame_blendshape_basis": "flame_basis.pt",
+            "faceverse_basis": "faceverse_basis.pt",
             "expressions": refinement_map,
             "total_gaussians": gaussian_state.means.shape[0],
         }
