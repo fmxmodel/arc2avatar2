@@ -235,11 +235,10 @@ def run_stage1(
         zero_grad(optimizer)
 
         pixel_intensity = torch.sigmoid(gs.opacities).mean().item()
-        # Only check divergence if we have meaningful statistics
-if len(history_conn) >= config.trailing_window:
-    _divergence_guard(conn_loss.item(), pixel_intensity,
-                      history_conn, history_intensity,
-                      config, i, "Stage1")
+        if len(history_conn) >= config.trailing_window:
+            _divergence_guard(conn_loss.item(), pixel_intensity,
+                              history_conn, history_intensity,
+                              config, i, "Stage1")
 
     writer.close()
     save_gaussian_state(gs, config.checkpoint_path)
