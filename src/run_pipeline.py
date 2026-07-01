@@ -282,23 +282,21 @@ def step_animation(config) -> None:
         print("  ⚠ Stage 2 checkpoint not found — skipping animation")
         return
 
+    from src.resource.gpu_manager import get_device
+    device = get_device()
+
     gs = load_gaussian_state(config.stage2.checkpoint_path)
+    # Move Gaussian state to GPU
+    for field in ['means', 'scales', 'rotations', 'opacities', 'sh_coeffs', 'vertex_id']:
+        t = getattr(gs, field, None)
+        if t is not None:
+            setattr(gs, field, t.to(device))
+
     identity = load_identity_embedding(
         config.data_prep.id_embedding_path,
         config.data_prep.id_embedding_json_path,
     ) if os.path.exists(config.data_prep.id_embedding_path) else None
     prior = load_frozen_prior(config.finetune.final_path) if os.path.exists(config.finetune.final_path) else None
-
-    # Load faceverse mesh for expression deformation and move to GPU
-    fv_mesh = None
-    if os.path.exists(config.data_prep.flame_loaded_path):
-        from src.resource.gpu_manager import get_device
-        fv_mesh = load_faceverse_mesh(config.data_prep.flame_loaded_path)
-        device = get_device()
-        for field in ['V', 'F', 'idBase', 'expBase', 'texBase', 'meanshape', 'meantex', 'point_buf']:
-            t = getattr(fv_mesh, field, None)
-            if t is not None:
-                setattr(fv_mesh, field, t.to(device))
 
     expression_states = []
     for expr_name in config.animation.expressions:
