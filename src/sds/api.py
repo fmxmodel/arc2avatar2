@@ -240,7 +240,7 @@ def sds_step(
                 if unet is not None and hasattr(unet, 'base_unet'):
                     # PoseConditionedUNet: pass ID embedding as encoder_hidden_states
                     # The model internally concatenates pose embedding
-                    id_vec = identity_embedding.vector.unsqueeze(0).to(device)  # [1, 512]
+                    id_vec = identity_embedding.vector.unsqueeze(0).unsqueeze(0).to(device)  # [1, 1, 512]
                     pose_enc = encode_pose_for_sds(camera).to(device)  # [4]
                     result = unet(
                         noised, t,
