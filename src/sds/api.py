@@ -259,16 +259,17 @@ def sds_step(
             # SDS loss in latent space (gradients flow through VAE to renderer)
             loss = (w_t * guidance_scale * ((noise_pred - noise) * noised).sum())
             loss.backward()
+            grad_out = noise_pred
         else:
             # Fallback: simple image-space gradient
             t = torch.randint(50, 950, (1,), device=device).long()
             alpha = (1000 - t.float()) / 1000.0
             noise = torch.randn_like(rendered)
-            noised = rendered * alpha + noise * (1 - alpha)
             noise_pred = noise.clone()
             grad = w_t * guidance_scale * (noise_pred - noise)
             rendered.backward(gradient=grad)
-        return grad_latent
+            grad_out = grad
+        return grad_out
 
     except Exception as e:
         raise OptimizationError(
