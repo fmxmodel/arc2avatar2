@@ -235,18 +235,29 @@ def sds_step(
 
         # Step 3: Predict noise through frozen prior
         with torch.no_grad():
-            if isinstance(prior_model, dict) and "base_unet" in prior_model:
-                # Full diffusion model path
-                unet = prior_model["base_unet"]
-                noise_pred = unet(noised, t).sample
+            if isinstance(prior_model, dict):
+                unet = prior_model.get("unet", None)
+                if unet is not None:
+                    # Full PoseConditionedUNet path with ID embedding
+                    pose_enc = encode_pose_for_sds(camera).to(device)
+                    id_vec = identity_embedding.vector.unsqueeze(0).to(device)
+                    # Combine ID + pose for encoder_hidden_states
+                    cond = torch.cat([id_vec, pose_enc.unsqueeze(1)], dim=1)
+                    noise_pred = unet(
+                        noised, t,
+                        encoder_hidden_states=cond,
+                    )
+                    # Handle both dict and tensor returns
+                    if isinstance(noise_pred, dict):
+                        noise_pred = noise_pred.get("sample", noise.clone())
+                else:
+                    noise_pred = noise.clone()
             elif hasattr(prior_model, "unet"):
-                # Object with .unet attribute
                 noise_pred = prior_model.unet(
                     noised, t,
                     encoder_hidden_states=identity_embedding.vector.unsqueeze(0).to(device),
                 ).sample
             else:
-                # Simple fallback: predict noise - rendered (image gradient)
                 noise_pred = noise.clone()
 
         # Step 4: Compute SDS gradient

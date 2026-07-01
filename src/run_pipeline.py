@@ -211,7 +211,7 @@ def step_stage1(config) -> None:
     from src.contracts.schemas import load_gaussian_state
     from src.contracts.schemas import load_identity_embedding
     from src.optim.api import run_stage1
-    from src.prior.api import load_frozen_prior
+    from src.prior.api import load_prior_with_unet
 
     print(f"\n[Directive 21] Stage 1 — face-only optimization ({config.stage1.iterations} iter)")
 
@@ -225,7 +225,10 @@ def step_stage1(config) -> None:
         config.data_prep.id_embedding_path,
         config.data_prep.id_embedding_json_path,
     )
-    prior = load_frozen_prior(config.finetune.final_path) if os.path.exists(config.finetune.final_path) else None
+    prior = load_prior_with_unet(
+        config.finetune.final_path,
+        config.data_prep.arc2face_base_path,
+    ) if os.path.exists(config.finetune.final_path) else None
 
     result = run_stage1(gs, identity, prior, config.stage1)
     print(f"  ✓ Stage 1 complete → {config.stage1.checkpoint_path}")
@@ -236,7 +239,7 @@ def step_stage2(config) -> None:
     import os
     from src.contracts.schemas import load_gaussian_state, load_identity_embedding
     from src.optim.api import run_stage2
-    from src.prior.api import load_frozen_prior
+    from src.prior.api import load_prior_with_unet
 
     print(f"\n[Directive 22] Stage 2 — full-head optimization ({config.stage2.iterations} iter)")
 
@@ -249,7 +252,10 @@ def step_stage2(config) -> None:
         config.data_prep.id_embedding_path,
         config.data_prep.id_embedding_json_path,
     )
-    prior = load_frozen_prior(config.finetune.final_path) if os.path.exists(config.finetune.final_path) else None
+    prior = load_prior_with_unet(
+        config.finetune.final_path,
+        config.data_prep.arc2face_base_path,
+    ) if os.path.exists(config.finetune.final_path) else None
 
     run_stage2(gs, identity, prior, config.stage2)
     print(f"  ✓ Stage 2 complete → {config.stage2.checkpoint_path}")

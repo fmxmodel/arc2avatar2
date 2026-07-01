@@ -1,11 +1,11 @@
-# Arc2Avatar — Fast Debug Experiment Override (Layer 2)
-# For quick smoke-test runs: minimal iterations, no refinement
+# Arc2Avatar — Full calibration run
+# Reduced from paper defaults (500/2000) for faster turnaround
 
 stage1:
-  iterations: 20
+  iterations: 100
 
 stage2:
-  iterations: 50
+  iterations: 200
 
 animation:
   expressions: ["neutral"]

@@ -203,8 +203,10 @@ def freeze_and_export(checkpoint_path: str, output_path: str) -> None:
 def load_frozen_prior(path: str) -> object:
     """Load frozen prior model (Invariant I5 enforced).
 
+    Returns a dict with state_dict and reconstructed unet if possible.
+
     Inputs:    path to final.pt.
-    Outputs:   frozen diffusion model (requires_grad=False on all params).
+    Outputs:   dict with 'state_dict' (weights) and optionally 'unet' (model).
     Exceptions: raises FileNotFoundError if path missing.
     Side effects: none.
     """
@@ -221,4 +223,43 @@ def load_frozen_prior(path: str) -> object:
                 state[k] = v.detach().requires_grad_(False)
 
     print(f"[PRIOR] Loaded frozen prior from {path}")
-    return state
+    return {"state_dict": state}
+
+
+def load_prior_with_unet(
+    final_path: str,
+    base_checkpoint_path: str,
+    device: str = "cuda",
+) -> object:
+    """Load frozen prior and reconstruct PoseConditionedUNet for SDS.
+
+    Returns a model object with .unet attribute for noise prediction.
+    """
+    from diffusers import UNet2DConditionModel
+
+    frozen = load_frozen_prior(final_path)
+    state_dict = frozen["state_dict"]
+
+    # Reconstruct base UNet
+    unet_subdir = os.path.join(base_checkpoint_path, "arc2face")
+    if os.path.exists(os.path.join(unet_subdir, "config.json")):
+        base_unet = UNet2DConditionModel.from_pretrained(
+            unet_subdir, torch_dtype=torch.float32
+        )
+    else:
+        print(f"  [PRIOR] WARNING: Arc2Face UNet not found at {unet_subdir}")
+        return frozen
+
+    # Wrap with pose conditioning and load state dict
+    unet = PoseConditionedUNet(base_unet)
+    # Filter state dict to matching keys
+    model_state = {k: v for k, v in state_dict.items()
+                   if k in unet.state_dict()}
+    unet.load_state_dict(model_state, strict=False)
+    unet.to(device)
+    unet.eval()
+    for p in unet.parameters():
+        p.requires_grad_(False)
+
+    print(f"[PRIOR] Reconstructed PoseConditionedUNet for SDS on {device}")
+    return {"state_dict": state_dict, "unet": unet}
