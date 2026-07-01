@@ -71,7 +71,7 @@ class GaussianInitConfig:
     - init_scale: 0.002 in FLAME unit space
     - avg_texture_iterations: 100-150 (tunable within range)
     """
-    init_scale: float = 0.002
+    init_scale: float = 0.02   # Match FaceVerse mesh extent (~1 unit diameter)
     init_opacity: float = 0.5  # mid-value, stored as inverse-sigmoid
     max_sh_degree: int = 3  # K = (max_sh_degree+1)^2
     init_state_path: str = "checkpoints/gaussians/init_state.pt"
@@ -119,9 +119,9 @@ class Stage1Config:
     fov_radians: float = 0.4
     azimuth_range_deg: Tuple[float, float] = (-110.0, 110.0)
     pitch_range_deg: Tuple[float, float] = (60.0, 90.0)
-    guidance_scale: float = 7.0
-    lr_position: float = 1e-2
-    lr_color: float = 1e-3
+    guidance_scale: float = 5.0   # Per Directive 20: 3-7 range
+    lr_position: float = 1e-3
+    lr_color: float = 5e-4
     log_interval: int = 50
     checkpoint_path: str = "checkpoints/gaussians/stage1_face.pt"
     k_neighbors: int = 8
@@ -143,9 +143,9 @@ class Stage2Config:
     fov_radians: float = 0.4
     azimuth_range_deg: Tuple[float, float] = (-180.0, 180.0)
     pitch_range_deg: Tuple[float, float] = (30.0, 120.0)
-    guidance_scale: float = 7.0
-    lr_position: float = 1e-2
-    lr_color: float = 1e-3
+    guidance_scale: float = 5.0
+    lr_position: float = 1e-3
+    lr_color: float = 5e-4
     log_interval: int = 50
     checkpoint_path: str = "checkpoints/gaussians/stage2_full_head.pt"
     k_neighbors: int = 8
