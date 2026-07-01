@@ -252,9 +252,11 @@ def sds_step(
         w_t = 1.0  # Standard SDS weighting
 
         if vae is not None and unet is not None and hasattr(unet, 'base_unet'):
-            # Full diffusion pipeline with VAE gradients
+            # Full diffusion pipeline through VAE
             rendered_norm = rendered * 2.0 - 1.0
-            latents = vae.encode(rendered_norm).latent_dist.sample() * 0.18215
+            # Encode WITHOUT no_grad so latent gradients flow back to rendered
+            posterior = vae.encode(rendered_norm)
+            latents = posterior.mode * 0.18215  # [1, 4, H/8, W/8]
 
             t = torch.randint(50, 950, (1,), device=device).long()
             noise = torch.randn_like(latents)
@@ -266,10 +268,9 @@ def sds_step(
                 pred = unet(noised, t, encoder_hidden_states=id_vec, pose_embedding=pose_enc)
             noise_pred = pred["sample"] if isinstance(pred, dict) else pred
 
-            # Return scalar SDS loss (caller calls backward, combined with other losses)
             return (w_t * guidance_scale * ((noise_pred - noise) * noised).sum())
         else:
-            # Fallback: image-space SDS
+            # Fallback: image-space SDS (always differentiable through renderer)
             t = torch.randint(50, 950, (1,), device=device).long()
             alpha = (1000 - t.float()) / 1000.0
             noise = torch.randn_like(rendered)
