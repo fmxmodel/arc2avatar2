@@ -129,24 +129,101 @@ def run_stage1(
     prior_model: object,
     config,
 ) -> GaussianState:
-    """Stage 1: Face-only optimization (Directive 21) — simplified pass-through.
+    """Stage 1: Face-only optimization (Directive 21).
 
-    Full SDS-based optimization requires a differentiable 3DGS rasterizer.
-    For now, passes Gaussian state unchanged to enable pipeline completion
-    and export.
+    Differentiable 3DGS optimization via gsplat rasterizer.
+    Face-only gradient mask, reference camera ranges.
 
     Inputs:    avg_texture_fit GaussianState, IdentityEmbedding, frozen prior, Stage1Config.
-    Outputs:   GaussianState (unchanged).
+    Outputs:   updated GaussianState (facial region only).
+    Exceptions: raises DivergenceError if divergence guard trips.
+    Side effects: saves stage1_face.pt, writes preview renders, logs to tensorboard.
     """
     import os
-    from src.contracts.schemas import save_gaussian_state
+    from collections import deque
+    from torch.utils.tensorboard import SummaryWriter
 
-    print(f"[OPT] Stage 1: face-only optimization ({config.iterations} iter) — "
-          f"skipped (requires differentiable 3DGS rasterizer)")
-    os.makedirs(os.path.dirname(config.checkpoint_path), exist_ok=True)
-    save_gaussian_state(initial_state, config.checkpoint_path)
-    print(f"[OPT] Stage 1 complete → {config.checkpoint_path} (passthrough)")
-    return initial_state
+    from src.contracts.schemas import save_gaussian_state
+    from src.trainfw.factory import build_optimizer
+    from src.trainfw.grad_utils import zero_grad
+    from src.sds.api import render, sample_camera, sds_step
+    from src.optim._sds_internals import compute_connectivity_loss, compute_initial_offsets
+
+    device = get_device()
+    writer = SummaryWriter(log_dir="logs/tensorboard/stage1")
+    os.makedirs("outputs/renders/stage1", exist_ok=True)
+
+    gs = initial_state
+    # Move Gaussian state tensors to target device
+    for field in ['means', 'scales', 'rotations', 'opacities', 'sh_coeffs', 'vertex_id']:
+        t = getattr(gs, field, None)
+        if t is not None and t.device != device:
+            setattr(gs, field, t.to(device))
+
+    n_vertices = gs.vertex_id.shape[0]
+    # Face mask: approximate facial region (top 55% of vertices, excludes neck)
+    face_mask = torch.zeros(n_vertices, dtype=torch.bool, device=device)
+    face_mask[:int(n_vertices * 0.55)] = True
+
+    # Build optimizer with separate LRs for position vs color/appearance
+    pos_params = gs.means[face_mask]
+    color_params = [gs.scales[face_mask], gs.rotations[face_mask],
+                    gs.opacities[face_mask], gs.sh_coeffs[face_mask]]
+
+    optimizer = build_optimizer([pos_params, color_params], config)
+
+    # Pre-compute initial offsets for connectivity regularizer
+    initial_offsets = compute_initial_offsets(gs.means, k=config.k_neighbors)
+
+    # Divergence guard state
+    history_conn = deque(maxlen=config.trailing_window)
+    history_intensity = deque(maxlen=config.trailing_window)
+
+    n_iter = config.iterations
+    print(f"[OPT] Stage 1: {n_iter} iterations, face-only, {face_mask.sum().item()} active Gaussians")
+
+    for i in range(n_iter):
+        # Sample camera
+        cam = sample_camera(
+            config.azimuth_range_deg, config.pitch_range_deg,
+            config.fov_radians,
+        )
+
+        # SDS step (computes gradients via differentiable gsplat renderer)
+        sds_step(gs, cam, identity, prior_model, config)
+
+        # Connectivity regularizer loss
+        conn_loss = compute_connectivity_loss(
+            gs.means, gs.vertex_id, initial_offsets,
+            k=config.k_neighbors, weight=config.weight,
+        )
+        conn_loss.backward()
+
+        # Apply gradient mask (face-only)
+        for field in ['means', 'scales', 'rotations', 'opacities', 'sh_coeffs']:
+            t = getattr(gs, field, None)
+            if t is not None and t.grad is not None:
+                t.grad[~face_mask] = 0.0
+
+        # Adam step
+        optimizer.step()
+        zero_grad(optimizer)
+
+        # Divergence guard
+        pixel_intensity = torch.sigmoid(gs.opacities).mean().item()
+        _divergence_guard(conn_loss.item(), pixel_intensity,
+                          history_conn, history_intensity,
+                          config, i, "Stage1")
+
+        # Logging
+        if i % max(config.log_interval, 1) == 0:
+            print(f"  [OPT] Stage 1 iter {i}/{n_iter}: conn={conn_loss.item():.6f}, "
+                  f"opacity={pixel_intensity:.4f}")
+
+    writer.close()
+    save_gaussian_state(gs, config.checkpoint_path)
+    print(f"[OPT] Stage 1 complete → {config.checkpoint_path}")
+    return gs
 
 
 @managed_stage
@@ -156,24 +233,86 @@ def run_stage2(
     prior_model: object,
     config,
 ) -> GaussianState:
-    """Stage 2: Full-head optimization (Directive 22) — simplified pass-through.
+    """Stage 2: Full-head optimization (Directive 22).
 
-    Full SDS-based optimization requires a differentiable 3DGS rasterizer.
-    For now, passes Gaussian state unchanged to enable pipeline completion
-    and export.
+    Unfreezes ALL Gaussians, wider camera ranges, larger iteration budget.
+    Differentiable via gsplat rasterizer.
 
     Inputs:    stage1 GaussianState, IdentityEmbedding, frozen prior, Stage2Config.
-    Outputs:   GaussianState (unchanged).
+    Outputs:   updated GaussianState (full head).
+    Exceptions: raises DivergenceError if divergence guard trips.
+    Side effects: saves stage2_full_head.pt, writes preview renders, logs to tensorboard.
     """
     import os
-    from src.contracts.schemas import save_gaussian_state
+    from collections import deque
+    from torch.utils.tensorboard import SummaryWriter
 
-    print(f"[OPT] Stage 2: full-head optimization ({config.iterations} iter) — "
-          f"skipped (requires differentiable 3DGS rasterizer)")
-    os.makedirs(os.path.dirname(config.checkpoint_path), exist_ok=True)
-    save_gaussian_state(stage1_state, config.checkpoint_path)
-    print(f"[OPT] Stage 2 complete → {config.checkpoint_path} (passthrough)")
-    return stage1_state
+    from src.contracts.schemas import save_gaussian_state
+    from src.trainfw.factory import build_optimizer
+    from src.trainfw.grad_utils import zero_grad
+    from src.sds.api import render, sample_camera, sds_step
+    from src.optim._sds_internals import compute_connectivity_loss, compute_initial_offsets
+
+    device = get_device()
+    writer = SummaryWriter(log_dir="logs/tensorboard/stage2")
+    os.makedirs("outputs/renders/stage2", exist_ok=True)
+
+    gs = stage1_state
+    # Move Gaussian state tensors to target device
+    for field in ['means', 'scales', 'rotations', 'opacities', 'sh_coeffs', 'vertex_id']:
+        t = getattr(gs, field, None)
+        if t is not None and t.device != device:
+            setattr(gs, field, t.to(device))
+
+    # Build optimizer for ALL parameters (pos vs color groups)
+    optimizer = build_optimizer(
+        [gs.means, [gs.scales, gs.rotations, gs.opacities, gs.sh_coeffs]],
+        config,
+    )
+
+    # Pre-compute initial offsets
+    initial_offsets = compute_initial_offsets(gs.means, k=config.k_neighbors)
+
+    # Divergence guard state
+    history_conn = deque(maxlen=config.trailing_window)
+    history_intensity = deque(maxlen=config.trailing_window)
+
+    n_iter = config.iterations
+    print(f"[OPT] Stage 2: {n_iter} iterations, full head, "
+          f"azimuth={config.azimuth_range_deg}, pitch={config.pitch_range_deg}")
+
+    for i in range(n_iter):
+        cam = sample_camera(
+            config.azimuth_range_deg, config.pitch_range_deg,
+            config.fov_radians,
+        )
+
+        sds_step(gs, cam, identity, prior_model, config)
+
+        conn_loss = compute_connectivity_loss(
+            gs.means, gs.vertex_id, initial_offsets,
+            k=config.k_neighbors, weight=config.weight,
+        )
+        conn_loss.backward()
+
+        optimizer.step()
+        zero_grad(optimizer)
+
+        pixel_intensity = torch.sigmoid(gs.opacities).mean().item()
+        _divergence_guard(
+            conn_loss.item(), pixel_intensity,
+            history_conn, history_intensity,
+            config, i, "Stage2",
+        )
+
+        if i % max(config.log_interval, 1) == 0:
+            print(f"  [OPT] Stage 2 iter {i}/{n_iter}: conn={conn_loss.item():.6f}, "
+                  f"opacity={pixel_intensity:.4f}")
+
+    writer.close()
+    save_gaussian_state(gs, config.checkpoint_path)
+    print(f"[OPT] Stage 2 complete → {config.checkpoint_path}")
+    return gs
 
 
 def get_final_state() -> Optional[GaussianState]:

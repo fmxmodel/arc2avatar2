@@ -1,0 +1,31 @@
+{
+  "run_id": "dev-run",
+  "config_snapshot": {
+    "stage1_iterations": 20,
+    "stage2_iterations": 50,
+    "stage1_azimuth": [
+      -110.0,
+      110.0
+    ],
+    "stage1_pitch": [
+      60.0,
+      90.0
+    ],
+    "stage2_azimuth": [
+      -180.0,
+      180.0
+    ],
+    "stage2_pitch": [
+      30.0,
+      120.0
+    ],
+    "guidance_scale": 5.0,
+    "seed": 42
+  },
+  "checkpoint_hashes": {},
+  "input_image_hash": "641c87ff1399ca98a5b5064004ccc2e55e8d9ee8c64cd2629533a89320aaeb92",
+  "stage1_iterations_actual": 20,
+  "stage2_iterations_actual": 50,
+  "quality_gate_results": {},
+  "schema_version": 1
+}
