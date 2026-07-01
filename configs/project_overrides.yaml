@@ -1,0 +1,11 @@
+# Arc2Avatar — Project/Machine-Specific Overrides (Layer 3)
+# Reserve for install-specific values. Do NOT put experiment tuning here.
+
+# Example overrides (uncomment and adjust for your machine):
+# data_prep:
+#   flame_template_path: "/custom/path/to/generic_model.pkl"
+#   panohead_path: "/datasets/panohead_synth/"
+#
+# resource_budget:
+#   PRIOR: 8000
+#   SDS: 4000

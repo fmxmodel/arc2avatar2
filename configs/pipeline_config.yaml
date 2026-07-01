@@ -1,0 +1,98 @@
+# Arc2Avatar — Pipeline Configuration (Layer 1: System Defaults)
+# These values mirror src/config/schema.py defaults exactly.
+# Part 1 reference values: 500, 0.4, -110..110, 60..90, -180..180, 30..120
+
+seed: 42
+device: "cuda:0"
+data_root: "."
+checkpoint_root: "."
+output_root: "."
+
+env_check:
+  cuda_required: true
+  pytorch3d_required: true
+  kaolin_required: true
+  diffusers_required: true
+
+data_prep:
+  input_image_path: "data/raw_input/subject.png"
+  min_face_bbox_size: 256
+  flame_template_path: "data/flame_template/generic_model.pkl"
+  flame_loaded_path: "data/flame_template/flame_loaded.pt"
+  id_embedding_path: "data/embeddings/subject_id_embedding.npy"
+  panohead_path: "data/panohead_synth/"
+  min_panohead_identities: 1000
+  min_panohead_angles: 8
+  dataset_version: "v1"
+
+gaussian_init:
+  init_scale: 0.002
+  init_opacity: 0.5
+  max_sh_degree: 3
+  avg_texture_iterations: 150
+
+connectivity:
+  k_neighbors: 8
+  weight: 0.1
+  drift_tolerance: 0.0001
+
+finetune:
+  learning_rate: 0.00001
+  batch_size: 4
+  num_epochs: 10
+  validation_angles_deg: [0, 45, 90, 135, 180, 225, 270, 315]
+
+stage1:
+  iterations: 500
+  fov_radians: 0.4
+  azimuth_range_deg: [-110.0, 110.0]
+  pitch_range_deg: [60.0, 90.0]
+  guidance_scale: 5.0
+  lr_position: 0.001
+  lr_color: 0.0005
+
+stage2:
+  iterations: 2000
+  fov_radians: 0.4
+  azimuth_range_deg: [-180.0, 180.0]
+  pitch_range_deg: [30.0, 120.0]
+  guidance_scale: 5.0
+  lr_position: 0.001
+  lr_color: 0.0005
+
+sds:
+  guidance_scale_default: 5.0
+  render_width: 512
+  render_height: 512
+
+divergence_guard:
+  std_dev_threshold: 3.0
+  trailing_window: 50
+  max_retries: 2
+
+animation:
+  id_similarity_threshold: 0.85
+  mouth_open_jaw_threshold: 0.3
+  refinement_guidance_scale: 7.0
+  refinement_iterations: 200
+  expressions: ["neutral", "smile", "open_mouth", "raised_brow"]
+
+export:
+  turntable_angle_step_deg: 5.0
+
+manual_approval:
+  require_approval_after_finetune: false
+  require_approval_after_stage1: false
+  require_approval_after_stage2: false
+  require_approval_after_refinement: false
+
+resource_budget:
+  PRIOR: 12000
+  GAUSS: 4000
+  SDS: 6000
+  OPT: 8000
+  ANIM: 4000
+  default: 2000
+
+logging:
+  log_level: "INFO"

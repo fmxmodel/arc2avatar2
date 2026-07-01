@@ -1,0 +1,18 @@
+# Arc2Avatar — Fast Debug Experiment Override (Layer 2)
+# For quick smoke-test runs: minimal iterations, no refinement
+
+stage1:
+  iterations: 20
+
+stage2:
+  iterations: 50
+
+animation:
+  expressions: ["neutral"]
+  refinement_iterations: 5
+
+manual_approval:
+  require_approval_after_finetune: false
+  require_approval_after_stage1: false
+  require_approval_after_stage2: false
+  require_approval_after_refinement: false

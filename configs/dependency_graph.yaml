@@ -1,0 +1,136 @@
+# Arc2Avatar Execution Dependency Graph
+# Derived from Directive 0.1/0.3 — machine-readable DAG for the scheduler
+# Convention: {from: PRODUCER, to: CONSUMER}
+# If X depends on Y, then Y runs before X, so edge is {from: Y, to: X}
+
+nodes:
+  - ENV
+  - DATA
+  - GAUSS
+  - PRIOR
+  - SDS
+  - OPT
+  - ANIM
+  - EXPORT
+  - CONFIG
+  - CONTRACTS
+  - STATE
+  - RESOURCE
+  - TRAINFW
+  - LOG
+  - VALID
+  - ERROR
+  - TEST
+  - EXPERIMENT
+  - ORCH
+  - EXT
+  - DOCS
+  - INTEGRATE
+
+edges:
+  # Core pipeline chain (Part 1) — root: ENV
+  - {from: ENV,     to: DATA}
+  - {from: DATA,    to: GAUSS}
+  - {from: DATA,    to: PRIOR}
+  - {from: GAUSS,   to: SDS}
+  - {from: PRIOR,   to: SDS}
+  - {from: GAUSS,   to: OPT}
+  - {from: SDS,     to: OPT}
+  - {from: OPT,     to: ANIM}
+  - {from: ANIM,    to: EXPORT}
+
+  # Configuration — CONFIG depends on ENV
+  - {from: ENV,     to: CONFIG}
+  - {from: CONFIG,  to: STATE}
+  - {from: CONFIG,  to: TRAINFW}
+  - {from: CONFIG,  to: LOG}
+
+  # Contracts — cross-cutting, everything depends on CONTRACTS
+  - {from: CONTRACTS, to: DATA}
+  - {from: CONTRACTS, to: GAUSS}
+  - {from: CONTRACTS, to: PRIOR}
+  - {from: CONTRACTS, to: SDS}
+  - {from: CONTRACTS, to: OPT}
+  - {from: CONTRACTS, to: ANIM}
+  - {from: CONTRACTS, to: EXPORT}
+  - {from: CONTRACTS, to: VALID}
+  - {from: CONTRACTS, to: EXT}
+  - {from: CONTRACTS, to: DOCS}
+
+  # State — STATE depends on CONFIG
+  - {from: STATE,   to: EXPERIMENT}
+  - {from: LOG,     to: EXPERIMENT}
+
+  # Orchestrator — ORCH depends on STATE and RESOURCE
+  - {from: STATE,   to: ORCH}
+  - {from: RESOURCE, to: ORCH}
+
+  # Resource — RESOURCE depends on ENV
+  - {from: ENV,     to: RESOURCE}
+
+  # Training framework
+  - {from: TRAINFW, to: PRIOR}
+  - {from: TRAINFW, to: SDS}
+  - {from: TRAINFW, to: OPT}
+  - {from: TRAINFW, to: ANIM}
+
+  # Logging — ERROR depends on LOG
+  - {from: LOG,     to: ERROR}
+
+  # Validation
+  - {from: VALID,   to: OPT}
+  - {from: VALID,   to: ANIM}
+  - {from: VALID,   to: EXPORT}
+
+  # Testing — TEST depends on ALL subsystems
+  - {from: ENV,        to: TEST}
+  - {from: DATA,       to: TEST}
+  - {from: GAUSS,      to: TEST}
+  - {from: PRIOR,      to: TEST}
+  - {from: SDS,        to: TEST}
+  - {from: OPT,        to: TEST}
+  - {from: ANIM,       to: TEST}
+  - {from: EXPORT,     to: TEST}
+  - {from: CONFIG,     to: TEST}
+  - {from: CONTRACTS,  to: TEST}
+  - {from: STATE,      to: TEST}
+  - {from: RESOURCE,   to: TEST}
+  - {from: TRAINFW,    to: TEST}
+  - {from: LOG,        to: TEST}
+  - {from: VALID,      to: TEST}
+  - {from: ERROR,      to: TEST}
+  - {from: EXPERIMENT, to: TEST}
+  - {from: ORCH,       to: TEST}
+
+  # Extensibility — EXT depends on CONTRACTS
+  - {from: CONTRACTS, to: EXT}
+
+  # Documentation — DOCS depends on CONTRACTS
+  - {from: CONTRACTS, to: DOCS}
+
+  # Final integration — INTEGRATE depends on ALL subsystems
+  - {from: ENV,        to: INTEGRATE}
+  - {from: DATA,       to: INTEGRATE}
+  - {from: GAUSS,      to: INTEGRATE}
+  - {from: PRIOR,      to: INTEGRATE}
+  - {from: SDS,        to: INTEGRATE}
+  - {from: OPT,        to: INTEGRATE}
+  - {from: ANIM,       to: INTEGRATE}
+  - {from: EXPORT,     to: INTEGRATE}
+  - {from: CONFIG,     to: INTEGRATE}
+  - {from: CONTRACTS,  to: INTEGRATE}
+  - {from: STATE,      to: INTEGRATE}
+  - {from: RESOURCE,   to: INTEGRATE}
+  - {from: TRAINFW,    to: INTEGRATE}
+  - {from: LOG,        to: INTEGRATE}
+  - {from: VALID,      to: INTEGRATE}
+  - {from: ERROR,      to: INTEGRATE}
+  - {from: TEST,       to: INTEGRATE}
+  - {from: EXPERIMENT, to: INTEGRATE}
+  - {from: ORCH,       to: INTEGRATE}
+  - {from: EXT,        to: INTEGRATE}
+  - {from: DOCS,       to: INTEGRATE}
+
+parallel_safe:
+  - [DATA_prep_image, DATA_prep_flame, DATA_prep_panohead]
+  - [PRIOR_finetune, GAUSS_avg_texture_fit]
