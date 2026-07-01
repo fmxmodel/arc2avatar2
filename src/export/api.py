@@ -106,6 +106,16 @@ def render_turntable(gaussian_state: GaussianState, config) -> None:
     Side effects: writes turntable_360.mp4.
     """
     try:
+        from src.resource.gpu_manager import get_device
+        device = get_device()
+
+        # Move Gaussian state to GPU device for rendering
+        gs_device = gaussian_state
+        for field in ['means', 'scales', 'rotations', 'opacities', 'sh_coeffs']:
+            t = getattr(gs_device, field, None)
+            if t is not None and t.device != device:
+                setattr(gs_device, field, t.to(device))
+
         output_path = getattr(config, "turntable_path", "outputs/renders/turntable_360.mp4")
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
 
@@ -115,7 +125,7 @@ def render_turntable(gaussian_state: GaussianState, config) -> None:
         frames = []
         for az in np.arange(0, 360, angle_step):
             cam = sample_camera((az, az), (pitch, pitch), 0.4, 2.0)
-            result = render(gaussian_state, cam)
+            result = render(gs_device, cam)
 
             img = result.image.detach().cpu()
             # Convert to HWC uint8 for video
