@@ -84,12 +84,27 @@ def extend_model_with_pose_conditioning(
         )
 
     try:
-        from diffusers import StableDiffusionPipeline
+        from diffusers import StableDiffusionPipeline, UNet2DConditionModel
 
-        pipe = StableDiffusionPipeline.from_pretrained(
-            base_checkpoint_path, torch_dtype=torch.float32
-        )
-        base_unet = pipe.unet
+        # Arc2Face has non-standard structure — try loading as full pipeline first,
+        # fall back to loading UNet directly
+        if os.path.exists(os.path.join(base_checkpoint_path, "model_index.json")):
+            pipe = StableDiffusionPipeline.from_pretrained(
+                base_checkpoint_path, torch_dtype=torch.float32
+            )
+            base_unet = pipe.unet
+        elif os.path.exists(os.path.join(base_checkpoint_path, "arc2face")):
+            # Arc2Face model: load UNet from subdirectory
+            unet_subdir = os.path.join(base_checkpoint_path, "arc2face")
+            base_unet = UNet2DConditionModel.from_pretrained(
+                unet_subdir, torch_dtype=torch.float32
+            )
+        else:
+            raise FinetuneError(
+                what_failed="Unknown Arc2Face checkpoint format",
+                why=f"No model_index.json or arc2face/ subdir in {base_checkpoint_path}",
+                how_to_fix="Download Arc2Face from FoivosPar/Arc2Face to checkpoints/arc2face_base/",
+            )
 
         # Wrap with pose conditioning
         unet = PoseConditionedUNet(base_unet)
