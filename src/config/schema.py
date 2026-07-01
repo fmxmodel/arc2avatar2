@@ -20,7 +20,7 @@ import yaml
 
 # ── FaceVerse constants (replacing FLAME) ──────────────────────────────────
 FACEVERSE_CANONICAL_VERT_COUNT: int = 6335  # FaceVerse v2 simplified vertex count
-FACEVERSE_CANONICAL_FACE_COUNT: int = 12566  # FaceVerse v2 simplified face count
+FACEVERSE_CANONICAL_FACE_COUNT: int = 12423  # FaceVerse v2 simplified face count
 FACEVERSE_ID_DIM: int = 150
 FACEVERSE_EXPR_DIM: int = 52    # Apple ARKit-compatible blendshapes
 FACEVERSE_TEX_DIM: int = 251    # Texture/albedo coefficient dimension

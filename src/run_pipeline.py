@@ -43,7 +43,7 @@ def step_data_prep(config) -> None:
     from src.data.api import (
         validate_input_image,
         extract_identity_embedding,
-        load_flame_template,
+        load_faceverse_model,
         verify_panohead_dataset,
     )
     from src.contracts.schemas import compute_file_hash
@@ -59,8 +59,9 @@ def step_data_prep(config) -> None:
         print(f"  ⚠ Input image not found: {img_path} (will use placeholder)")
 
     # Step 6: Verify checkpoints exist
+    fv_npy_path = config.data_prep.flame_template_path  # faceverse_simple_v2.npy
     for ckpt_dir in [config.data_prep.arc2face_base_path,
-                     os.path.dirname(config.data_prep.flame_template_path)]:
+                     os.path.dirname(fv_npy_path)]:
         if os.path.exists(ckpt_dir):
             print(f"  ✓ Checkpoint present: {ckpt_dir}")
         else:
@@ -80,18 +81,16 @@ def step_data_prep(config) -> None:
     else:
         print(f"  ✓ ID embedding already exists (skip)")
 
-    # Step 8: Load FLAME template (skip if already exists)
-    if not os.path.exists(config.data_prep.flame_loaded_path):
-        if os.path.exists(config.data_prep.flame_template_path):
-            load_flame_template(
-                config.data_prep.flame_template_path,
-                config.data_prep.flame_loaded_path,
-            )
-            print(f"  ✓ FLAME template loaded → {config.data_prep.flame_loaded_path}")
+    # Step 8: Load FaceVerse model (skip if already loaded)
+    fv_pt_path = config.data_prep.flame_loaded_path.replace('flame', 'faceverse')
+    if not os.path.exists(fv_pt_path):
+        if os.path.exists(fv_npy_path):
+            load_faceverse_model(fv_npy_path, fv_pt_path)
+            print(f"  ✓ FaceVerse loaded → {fv_pt_path}")
         else:
-            print(f"  ⚠ FLAME template not found: {config.data_prep.flame_template_path}")
+            print(f"  ⚠ FaceVerse model not found: {fv_npy_path}")
     else:
-        print(f"  ✓ FLAME template already exists (skip)")
+        print(f"  ✓ FaceVerse already loaded (skip)")
 
     # Step 9: Verify panohead dataset
     if os.path.exists(config.data_prep.panohead_path):
@@ -126,7 +125,7 @@ def step_gaussian_init(config) -> None:
         nv = 6335
         faceverse_mesh = FaceVerseMesh(
             V=torch.randn(nv, 3),
-            F=torch.randint(0, nv, (12566, 3)),
+            F=torch.randint(0, nv, (12423, 3)),
             idBase=torch.randn(nv*3, 150),
             expBase=torch.randn(nv*3, 52),
             texBase=torch.randn(nv*3, 251),
