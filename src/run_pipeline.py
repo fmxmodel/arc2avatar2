@@ -289,6 +289,17 @@ def step_animation(config) -> None:
     ) if os.path.exists(config.data_prep.id_embedding_path) else None
     prior = load_frozen_prior(config.finetune.final_path) if os.path.exists(config.finetune.final_path) else None
 
+    # Load faceverse mesh for expression deformation and move to GPU
+    fv_mesh = None
+    if os.path.exists(config.data_prep.flame_loaded_path):
+        from src.resource.gpu_manager import get_device
+        fv_mesh = load_faceverse_mesh(config.data_prep.flame_loaded_path)
+        device = get_device()
+        for field in ['V', 'F', 'idBase', 'expBase', 'texBase', 'meanshape', 'meantex', 'point_buf']:
+            t = getattr(fv_mesh, field, None)
+            if t is not None:
+                setattr(fv_mesh, field, t.to(device))
+
     expression_states = []
     for expr_name in config.animation.expressions:
         print(f"  Expression: {expr_name}")
