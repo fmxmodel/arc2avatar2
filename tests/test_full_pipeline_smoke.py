@@ -46,7 +46,7 @@ class TestFullPipelineSmoke(unittest.TestCase):
         config = load_and_validate_config(experiment="fast_debug")
         self.assertIsNotNone(config)
         self.assertEqual(config.stage1.iterations, 100)
-        self.assertEqual(config.stage2.iterations, 50)
+        self.assertEqual(config.stage2.iterations, 200)
 
     def test_dependency_graph_is_dag(self):
         """Test that dependency graph has no cycles (Directive 0.3)."""
