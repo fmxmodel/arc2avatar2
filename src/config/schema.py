@@ -124,6 +124,10 @@ class Stage1Config:
     lr_color: float = 5e-4
     log_interval: int = 50
     checkpoint_path: str = "checkpoints/gaussians/stage1_face.pt"
+    k_neighbors: int = 8
+    trailing_window: int = 50
+    std_dev_threshold: float = 3.0
+    weight: float = 0.1
 
 
 @dataclass
@@ -144,6 +148,10 @@ class Stage2Config:
     lr_color: float = 5e-4
     log_interval: int = 50
     checkpoint_path: str = "checkpoints/gaussians/stage2_full_head.pt"
+    k_neighbors: int = 8
+    trailing_window: int = 50
+    std_dev_threshold: float = 3.0
+    weight: float = 0.1
 
 
 @dataclass
