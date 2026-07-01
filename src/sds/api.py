@@ -256,8 +256,8 @@ def sds_step(
             rendered_norm = rendered * 2.0 - 1.0
             # Encode WITHOUT no_grad so latent gradients flow back to rendered
             posterior = vae.encode(rendered_norm).latent_dist
-            # Use rsample for differentiable reparameterization
-            latents = posterior.rsample() * 0.18215  # [1, 4, H/8, W/8]
+            # Sample with differentiable reparameterization (grad flows to mean)
+            latents = posterior.sample() * 0.18215  # [1, 4, H/8, W/8]
 
             t = torch.randint(50, 950, (1,), device=device).long()
             noise = torch.randn_like(latents)
