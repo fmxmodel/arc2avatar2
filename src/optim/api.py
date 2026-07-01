@@ -154,12 +154,9 @@ def run_stage1(
 
     # Build optimizer with separate LRs for position vs color/opacity
     pos_params = gs.means[face_mask]
-    color_params = torch.cat([
-        gs.scales[face_mask],
-        gs.rotations[face_mask],
-        gs.opacities[face_mask],
-        gs.sh_coeffs[face_mask].flatten(1),
-    ])
+    # Pass list of parameter groups — each gets the same lr_color
+    color_params = [gs.scales[face_mask], gs.rotations[face_mask],
+                    gs.opacities[face_mask], gs.sh_coeffs[face_mask]]
 
     optimizer = build_optimizer(
         [pos_params, color_params],
@@ -255,9 +252,9 @@ def run_stage2(
         if t is not None and t.device != device:
             setattr(gs, field, t.to(device))
 
-    # Build optimizer for ALL parameters
+    # Build optimizer for ALL parameters (pos vs color groups)
     optimizer = build_optimizer(
-        [gs.means, gs.scales, gs.rotations, gs.opacities, gs.sh_coeffs],
+        [gs.means, [gs.scales, gs.rotations, gs.opacities, gs.sh_coeffs]],
         config,
     )
 
