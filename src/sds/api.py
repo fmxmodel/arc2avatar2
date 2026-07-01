@@ -93,7 +93,10 @@ def _compute_sh_colors(sh_coeffs: torch.Tensor, dirs: torch.Tensor) -> torch.Ten
 
 
 def render(gaussian_state: GaussianState, camera: CameraSample) -> RenderResult:
-    """Differentiable 3DGS renderer via gsplat (Directive 17).
+    """Differentiable renderer via PyTorch3D PointsRenderer (Directive 17).
+
+    Uses PyTorch3D's point rasterizer which produces non-zero position gradients
+    (unlike gsplat's rasterizer which zeros out dL/dmeans).
 
     Inputs:    GaussianState, CameraSample.
     Outputs:   RenderResult (differentiable image tensor).
@@ -101,46 +104,55 @@ def render(gaussian_state: GaussianState, camera: CameraSample) -> RenderResult:
     Side effects: none (pure function with autograd).
     """
     try:
-        from gsplat.rendering import rasterization
+        from pytorch3d.structures import Pointclouds
+        from pytorch3d.renderer import (
+            PointsRenderer, PointsRasterizationSettings, PointsRasterizer,
+            AlphaCompositor, FoVPerspectiveCameras, look_at_view_transform,
+        )
+        import warnings
 
         device = get_device_obj()
         H, W = 512, 512
+        radius = 0.015  # Point radius in normalized device coords
 
-        # Build camera matrices
-        viewmats, Ks = _build_viewmat_and_K(camera, (H, W), device)
+        # Build PyTorch3D camera from spherical coords
+        az_rad = math.radians(camera.azimuth_deg)
+        el_rad = math.radians(camera.pitch_deg)
+        cx = camera.radius * math.cos(el_rad) * math.sin(az_rad)
+        cy = camera.radius * math.sin(el_rad)
+        cz = camera.radius * math.cos(el_rad) * math.cos(az_rad)
+        R, T = look_at_view_transform(
+            eye=((cx, cy, cz),), at=(camera.look_at,),
+        )
+        cam = FoVPerspectiveCameras(
+            device=device, R=R.to(device), T=T.to(device),
+            fov=camera.fov_rad * 180.0 / math.pi,
+        )
 
-        # Prepare Gaussian tensors
+        # Compute RGB colors from SH
+        cam_pos = torch.tensor([cx, cy, cz], device=device)
         means = gaussian_state.means.to(device)
-        quats = F.normalize(gaussian_state.rotations.to(device), dim=1)
-        scales = gaussian_state.scales.to(device)  # log-scale (gsplat takes log)
-        opacities = torch.sigmoid(gaussian_state.opacities.to(device)).squeeze(-1)  # [N]
-
-        # Compute view directions for SH
-        # Camera position in world space (inverse viewmat extract pos)
-        cam_pos = -viewmats[0, :3, :3].T @ viewmats[0, :3, 3]
         dirs = F.normalize(means - cam_pos, dim=1)
+        colors = _compute_sh_colors(gaussian_state.sh_coeffs.to(device), dirs)
 
-        # SH → RGB
-        colors = _compute_sh_colors(gaussian_state.sh_coeffs.to(device), dirs)  # [N, 3]
+        # Build point cloud
+        point_cloud = Pointclouds(
+            points=means.unsqueeze(0),
+            features=colors.unsqueeze(0),
+        )
 
         # Render
-        rendered, alpha, info = rasterization(
-            means=means,
-            quats=quats,
-            scales=scales,
-            opacities=opacities,
-            colors=colors,
-            viewmats=viewmats,
-            Ks=Ks,
-            width=W,
-            height=H,
-            near_plane=0.01,
-            far_plane=100.0,
-            render_mode="RGB",
-            radius_clip=0.0,
+        raster_settings = PointsRasterizationSettings(
+            image_size=H, radius=radius, points_per_pixel=10,
         )
-        # rendered: [1, H, W, 3] -> [3, H, W]
-        image_tensor = rendered[0].permute(2, 0, 1)
+        rasterizer = PointsRasterizer(cameras=cam, raster_settings=raster_settings)
+        renderer = PointsRenderer(rasterizer=rasterizer, compositor=AlphaCompositor())
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            images = renderer(point_cloud)
+
+        image_tensor = images[0].permute(2, 0, 1)  # [H, W, 3] -> [3, H, W]
 
         return RenderResult(
             image=image_tensor,
