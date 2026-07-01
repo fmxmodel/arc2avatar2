@@ -82,11 +82,10 @@ def step_data_prep(config) -> None:
         print(f"  ✓ ID embedding already exists (skip)")
 
     # Step 8: Load FaceVerse model (skip if already loaded)
-    fv_pt_path = config.data_prep.flame_loaded_path.replace('flame', 'faceverse')
-    if not os.path.exists(fv_pt_path):
+    if not os.path.exists(config.data_prep.flame_loaded_path):
         if os.path.exists(fv_npy_path):
-            load_faceverse_model(fv_npy_path, fv_pt_path)
-            print(f"  ✓ FaceVerse loaded → {fv_pt_path}")
+            load_faceverse_model(fv_npy_path, config.data_prep.flame_loaded_path)
+            print(f"  ✓ FaceVerse loaded → {config.data_prep.flame_loaded_path}")
         else:
             print(f"  ⚠ FaceVerse model not found: {fv_npy_path}")
     else:
@@ -113,15 +112,17 @@ def step_gaussian_init(config) -> None:
     print(f"\n[Directives 10-13] Gaussian initialization + avg-texture fit")
 
     # Load FaceVerse mesh
-    fv_path = config.data_prep.flame_loaded_path.replace('flame', 'faceverse')
-    if os.path.exists(fv_path):
-        faceverse_mesh = load_faceverse_mesh(fv_path)
-    elif os.path.exists(config.data_prep.flame_template_path):
+    fv_pt_path = config.data_prep.flame_loaded_path
+    fv_npy_path = config.data_prep.flame_template_path
+    if os.path.exists(fv_pt_path):
+        faceverse_mesh = load_faceverse_mesh(fv_pt_path)
+    elif os.path.exists(fv_npy_path):
         from src.data.api import load_faceverse_model
-        load_faceverse_model(config.data_prep.flame_template_path, fv_path)
-        faceverse_mesh = load_faceverse_mesh(fv_path)
+        load_faceverse_model(fv_npy_path, fv_pt_path)
+        faceverse_mesh = load_faceverse_mesh(fv_pt_path)
     else:
         print("  ⚠ FaceVerse mesh not available — creating synthetic placeholder")
+        import torch
         nv = 6335
         faceverse_mesh = FaceVerseMesh(
             V=torch.randn(nv, 3),

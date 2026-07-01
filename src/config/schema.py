@@ -51,9 +51,9 @@ class DataPrepConfig:
     input_image_path: str = "data/raw_input/subject.png"
     min_face_bbox_size: int = 256
     arc2face_base_path: str = "checkpoints/arc2face_base/"
-    flame_template_path: str = "data/flame_template/generic_model.pkl"
-    flame_obj_path: str = "data/flame_template/template.obj"
-    flame_loaded_path: str = "data/flame_template/flame_loaded.pt"
+    flame_template_path: str = "data/faceverse/faceverse_simple_v2.npy"  # FaceVerse v2 .npy
+    flame_obj_path: str = ""  # unused (was FLAME obj)
+    flame_loaded_path: str = "data/faceverse/faceverse_loaded.pt"  # FaceVerse converted .pt
     id_embedding_path: str = "data/embeddings/subject_id_embedding.npy"
     id_embedding_json_path: str = "data/embeddings/subject_id_embedding.json"
     panohead_path: str = "data/panohead_synth/"
