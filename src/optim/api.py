@@ -217,25 +217,29 @@ def run_stage1(
         # Single backward through SDS graph only
         sds_loss.backward()
 
-        # Apply gradient mask (face-only)
+        # Apply gradient mask (face-only) [grads are live here]
         for field in ['means', 'scales', 'rotations', 'opacities', 'sh_coeffs']:
             t = getattr(gs, field, None)
             if t is not None and t.grad is not None:
                 t.grad[~face_mask] = 0.0
+
+        # Log gradient diagnostics BEFORE zero_grad
+        if i % max(config.log_interval, 1) == 0:
+            gn = gs.means.grad.norm().item() if gs.means.grad is not None else 0.0
+            opac_mean = torch.sigmoid(gs.opacities).mean().item()
+            print(f"  [OPT] Stage 1 iter {i}/{n_iter}: conn={conn_loss.item():.8f}, "
+                  f"opac={opac_mean:.4f}, grad_norm={gn:.6f}")
 
         # Adam step
         optimizer.step()
         zero_grad(optimizer)
 
         pixel_intensity = torch.sigmoid(gs.opacities).mean().item()
-        _divergence_guard(conn_loss.item(), pixel_intensity,
-                          history_conn, history_intensity,
-                          config, i, "Stage1")
-
-        if i % max(config.log_interval, 1) == 0:
-            gn = gs.means.grad.norm().item() if gs.means.grad is not None else 0.0
-            print(f"  [OPT] Stage 1 iter {i}/{n_iter}: conn={conn_loss.item():.8f}, "
-                  f"opac={pixel_intensity:.4f}, grad_norm={gn:.6f}")
+        # Only check divergence if we have meaningful statistics
+if len(history_conn) >= config.trailing_window:
+    _divergence_guard(conn_loss.item(), pixel_intensity,
+                      history_conn, history_intensity,
+                      config, i, "Stage1")
 
     writer.close()
     save_gaussian_state(gs, config.checkpoint_path)
@@ -321,20 +325,23 @@ def run_stage2(
                 k=config.k_neighbors, weight=config.weight,
             )
 
+        # Log diagnostics BEFORE zero_grad
+        if i % max(config.log_interval, 1) == 0:
+            gn = gs.means.grad.norm().item() if gs.means.grad is not None else 0.0
+            opac_mean = torch.sigmoid(gs.opacities).mean().item()
+            print(f"  [OPT] Stage 2 iter {i}/{n_iter}: conn={conn_loss.item():.8f}, "
+                  f"opac={opac_mean:.4f}, grad_norm={gn:.6f}")
+
         optimizer.step()
         zero_grad(optimizer)
 
         pixel_intensity = torch.sigmoid(gs.opacities).mean().item()
-        _divergence_guard(
-            conn_loss.item(), pixel_intensity,
-            history_conn, history_intensity,
-            config, i, "Stage2",
-        )
-
-        if i % max(config.log_interval, 1) == 0:
-            gn = gs.means.grad.norm().item() if gs.means.grad is not None else 0.0
-            print(f"  [OPT] Stage 2 iter {i}/{n_iter}: conn={conn_loss.item():.8f}, "
-                  f"opac={pixel_intensity:.4f}, grad_norm={gn:.6f}")
+        if len(history_conn) >= config.trailing_window:
+            _divergence_guard(
+                conn_loss.item(), pixel_intensity,
+                history_conn, history_intensity,
+                config, i, "Stage2",
+            )
 
     writer.close()
     save_gaussian_state(gs, config.checkpoint_path)
