@@ -165,16 +165,24 @@ def step_finetune_prior(config) -> None:
         print(f"  ✓ Fine-tuned prior already exists: {config.finetune.final_path} (skip)")
         return
 
+    # Check if base Arc2Face model is available (needs model_index.json or similar)
+    base_path = config.data_prep.arc2face_base_path
+    base_valid = os.path.exists(base_path) and any(
+        f.endswith((".json", ".bin", ".safetensors", ".pt"))
+        for f in os.listdir(base_path)
+    ) if os.path.isdir(base_path) else False
+
+    if not base_valid:
+        print(f"  ⚠ Arc2Face base checkpoint not found or incomplete: {base_path}")
+        print(f"  [SKIP] Fine-tuning requires the Arc2Face base model.")
+        print(f"  [INFO] Download from: https://huggingface.co/openvision3d/arc2face")
+        print(f"  [INFO] Place files in: {base_path}")
+        return
+
     # Directive 14: Extend model with pose conditioning
     if not os.path.exists(config.finetune.arch_init_path):
-        base_path = config.data_prep.arc2face_base_path
-        if os.path.exists(base_path):
-            extend_model_with_pose_conditioning(base_path, config.finetune.arch_init_path, device)
-            print(f"  ✓ Model extended with pose conditioning")
-        else:
-            print(f"  ⚠ Base Arc2Face checkpoint not found: {base_path}")
-            print(f"  [SKIP] Fine-tuning requires the base Arc2Face checkpoint")
-            return
+        extend_model_with_pose_conditioning(base_path, config.finetune.arch_init_path, device)
+        print(f"  ✓ Model extended with pose conditioning")
     else:
         print(f"  ✓ Architecture already extended (skip)")
 
