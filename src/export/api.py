@@ -35,11 +35,11 @@ def _gaussian_to_ply(gaussian_state: GaussianState) -> str:
     device = gaussian_state.means.device
     N = gaussian_state.means.shape[0]
 
-    means = gaussian_state.means.cpu().numpy()
-    scales = torch.exp(gaussian_state.scales).cpu().numpy()  # exp() activation
-    rotations = F.normalize(gaussian_state.rotations, dim=1).cpu().numpy()
-    opacities = torch.sigmoid(gaussian_state.opacities).cpu().numpy()
-    sh_dc = gaussian_state.sh_coeffs[:, :, 0].cpu().numpy()  # [N, 3]
+    means = gaussian_state.means.detach().cpu().numpy()
+    scales = torch.exp(gaussian_state.scales.detach()).cpu().numpy()  # exp() activation
+    rotations = F.normalize(gaussian_state.rotations.detach(), dim=1).cpu().numpy()
+    opacities = torch.sigmoid(gaussian_state.opacities.detach()).cpu().numpy()
+    sh_dc = gaussian_state.sh_coeffs.detach()[:, :, 0].cpu().numpy()  # [N, 3]
 
     header = f"""ply
 format ascii 1.0
