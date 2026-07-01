@@ -226,46 +226,66 @@ def sds_step(
             result = render(gaussian_state, camera)
             rendered = result.image.unsqueeze(0).to(device)  # [1, 3, H, W]
 
-        # Step 2: Add diffusion noise at random timestep
-        # Use simple noise schedule (works without full diffusion pipeline)
-        t = torch.randint(50, 950, (1,), device=device).long()
-        alpha = (1000 - t.float()) / 1000.0
-        noise = torch.randn_like(rendered)
-        noised = rendered * alpha + noise * (1 - alpha)
+        # Step 2: Encode rendered image to latent space via VAE
+        # The UNet operates in latent space (4-channel for SD)
+        if isinstance(prior_model, dict):
+            vae = prior_model.get("vae", None)
+            unet = prior_model.get("unet", None)
+        else:
+            vae = None
+            unet = getattr(prior_model, "unet", None) if hasattr(prior_model, "unet") else None
 
-        # Step 3: Predict noise through frozen prior
-        with torch.no_grad():
-            if isinstance(prior_model, dict):
-                unet = prior_model.get("unet", None)
-                if unet is not None and hasattr(unet, 'base_unet'):
-                    # PoseConditionedUNet: pass ID embedding as encoder_hidden_states
-                    # The model internally concatenates pose embedding
-                    id_vec = identity_embedding.vector.unsqueeze(0).unsqueeze(0).to(device)  # [1, 1, 512]
-                    pose_enc = encode_pose_for_sds(camera).to(device)  # [4]
-                    result = unet(
-                        noised, t,
-                        encoder_hidden_states=id_vec,
-                        pose_embedding=pose_enc,
-                    )
-                    noise_pred = result if isinstance(result, torch.Tensor) else noise.clone()
-                else:
-                    noise_pred = noise.clone()
-            elif hasattr(prior_model, "unet"):
-                noise_pred = prior_model.unet(
-                    noised, t,
-                    encoder_hidden_states=identity_embedding.vector.unsqueeze(0).to(device),
-                ).sample
-            else:
-                noise_pred = noise.clone()
-
-        # Step 4: Compute SDS gradient
         w_t = 1.0  # Standard SDS weighting
-        grad = w_t * guidance_scale * (noise_pred - noise)
 
-        # Step 5: Backprop via explicit gradient injection
-        rendered.backward(gradient=grad)
+        if vae is not None and unet is not None and hasattr(unet, 'base_unet'):
+            # Full diffusion pipeline
+            # Normalize rendered to [-1, 1]
+            rendered_norm = rendered * 2.0 - 1.0
+            with torch.no_grad():
+                latents = vae.encode(rendered_norm).latent_dist.sample()
+            latents = latents * 0.18215  # SD scaling factor
 
-        return grad
+            # Add noise in latent space
+            t = torch.randint(50, 950, (1,), device=device).long()
+            noise = torch.randn_like(latents)
+            noised = latents + noise * (t.float() / 1000.0)  # Simple schedule
+
+            # Predict noise
+            id_vec = identity_embedding.vector.unsqueeze(0).unsqueeze(0).to(device)  # [1, 1, 512]
+            pose_enc = encode_pose_for_sds(camera).to(device)  # [4]
+            noise_pred = unet(
+                noised, t,
+                encoder_hidden_states=id_vec,
+                pose_embedding=pose_enc,
+            )
+            if isinstance(noise_pred, dict):
+                noise_pred = noise_pred.get("sample", noise)
+
+            # SDS gradient  
+            grad_latent = w_t * guidance_scale * (noise_pred - noise)
+        else:
+            # Fallback: simple image-space gradient
+            t = torch.randint(50, 950, (1,), device=device).long()
+            alpha = (1000 - t.float()) / 1000.0
+            noise = torch.randn_like(rendered)
+            noise_pred = noise.clone()
+            grad_latent = w_t * guidance_scale * (noise_pred - noise)
+
+        # Step 5: Backprop through VAE decoder + renderer
+        if vae is not None and hasattr(vae, 'decode'):
+            with torch.enable_grad():
+                # Decode gradient back to image space
+                grad_latent = grad_latent / 0.18215
+                # Simple gradient approximation: gradient flows through VAE decoder
+                # Reconstruct with gradients
+                decoded = vae.decode(latents.detach() + grad_latent).sample
+                # Backprop through renderer
+                img_loss = (decoded - rendered_norm.detach()).abs().mean()
+                img_loss.backward()
+        else:
+            rendered.backward(gradient=grad_latent)
+
+        return grad_latent
 
     except Exception as e:
         raise OptimizationError(

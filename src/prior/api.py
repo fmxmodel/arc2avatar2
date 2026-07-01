@@ -265,6 +265,20 @@ def load_prior_with_unet(
         print(f"  [PRIOR] WARNING: Arc2Face UNet not found at {unet_subdir}")
         return frozen
 
+    # Load VAE for latent space encoding
+    try:
+        from diffusers import AutoencoderKL
+        vae = AutoencoderKL.from_pretrained(
+            base_checkpoint_path, subfolder="vae", torch_dtype=torch.float32
+        )
+        vae.to(device)
+        vae.eval()
+        for p in vae.parameters():
+            p.requires_grad_(False)
+    except Exception as e:
+        print(f"  [PRIOR] WARNING: VAE not loaded ({e})")
+        vae = None
+
     # Wrap with pose conditioning and load state dict
     unet = PoseConditionedUNet(base_unet)
     # Filter state dict to matching keys
@@ -277,4 +291,4 @@ def load_prior_with_unet(
         p.requires_grad_(False)
 
     print(f"[PRIOR] Reconstructed PoseConditionedUNet for SDS on {device}")
-    return {"state_dict": state_dict, "unet": unet}
+    return {"state_dict": state_dict, "unet": unet, "vae": vae}
