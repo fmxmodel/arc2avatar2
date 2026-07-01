@@ -265,18 +265,21 @@ def load_prior_with_unet(
         print(f"  [PRIOR] WARNING: Arc2Face UNet not found at {unet_subdir}")
         return frozen
 
-    # Load VAE for latent space encoding
+    # Load VAE for latent space encoding (from SD 1.5 base)
     try:
         from diffusers import AutoencoderKL
+        # Arc2Face doesn't bundle VAE - load from runwayml/stable-diffusion-v1-5
         vae = AutoencoderKL.from_pretrained(
-            base_checkpoint_path, subfolder="vae", torch_dtype=torch.float32
+            "runwayml/stable-diffusion-v1-5", subfolder="vae",
+            torch_dtype=torch.float32
         )
         vae.to(device)
         vae.eval()
         for p in vae.parameters():
             p.requires_grad_(False)
+        print(f"  [PRIOR] Loaded SD 1.5 VAE for latent encoding")
     except Exception as e:
-        print(f"  [PRIOR] WARNING: VAE not loaded ({e})")
+        print(f"  [PRIOR] WARNING: VAE not loaded ({e}) - using fallback SDS")
         vae = None
 
     # Wrap with pose conditioning and load state dict
