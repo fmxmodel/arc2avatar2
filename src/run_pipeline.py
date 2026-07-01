@@ -108,36 +108,36 @@ def step_data_prep(config) -> None:
 def step_gaussian_init(config) -> None:
     """Directives 10-13: Gaussian initialization and average-texture fitting."""
     import os
-    from src.data.api import load_flame_template
-    from src.gauss.api import init_gaussians_from_flame, run_avg_texture_fit
-    from src.contracts.schemas import load_flame_mesh
+    from src.gauss.api import init_gaussians_from_faceverse, run_avg_texture_fit
+    from src.contracts.schemas import load_faceverse_mesh, FaceVerseMesh
 
     print(f"\n[Directives 10-13] Gaussian initialization + avg-texture fit")
 
-    # Load FLAME mesh
-    if os.path.exists(config.data_prep.flame_loaded_path):
-        flame_mesh = load_flame_mesh(config.data_prep.flame_loaded_path)
+    # Load FaceVerse mesh
+    fv_path = config.data_prep.flame_loaded_path.replace('flame', 'faceverse')
+    if os.path.exists(fv_path):
+        faceverse_mesh = load_faceverse_mesh(fv_path)
     elif os.path.exists(config.data_prep.flame_template_path):
-        # Load directly from PKL
-        from src.data.api import load_flame_template as load_flame
-        load_flame(config.data_prep.flame_template_path, config.data_prep.flame_loaded_path)
-        flame_mesh = load_flame_mesh(config.data_prep.flame_loaded_path)
+        from src.data.api import load_faceverse_model
+        load_faceverse_model(config.data_prep.flame_template_path, fv_path)
+        faceverse_mesh = load_faceverse_mesh(fv_path)
     else:
-        print("  ⚠ FLAME mesh not available — creating synthetic placeholder")
-        import torch
-        from src.contracts.schemas import FlameMesh
-        nv = 5023
-        flame_mesh = FlameMesh(
+        print("  ⚠ FaceVerse mesh not available — creating synthetic placeholder")
+        nv = 6335
+        faceverse_mesh = FaceVerseMesh(
             V=torch.randn(nv, 3),
-            F=torch.randint(0, nv, (9976, 3)),
-            shape_bs=torch.randn(nv, 3, 300),
-            expr_bs=torch.randn(nv, 3, 100),
-            pose_bs=torch.randn(nv, 3, 36),
+            F=torch.randint(0, nv, (12566, 3)),
+            idBase=torch.randn(nv*3, 150),
+            expBase=torch.randn(nv*3, 52),
+            texBase=torch.randn(nv*3, 251),
+            meanshape=torch.randn(nv*3),
+            meantex=torch.randn(nv*3),
+            point_buf=torch.randint(0, nv, (nv, 8)),
         )
 
     # Directive 10: Initialize Gaussians
     if not os.path.exists(config.gaussian_init.init_state_path):
-        gs = init_gaussians_from_flame(flame_mesh, config.gaussian_init)
+        gs = init_gaussians_from_faceverse(faceverse_mesh, config.gaussian_init)
         print(f"  ✓ Gaussians initialized: {gs.means.shape[0]} primitives")
     else:
         from src.contracts.schemas import load_gaussian_state
@@ -260,11 +260,11 @@ def step_animation(config) -> None:
     import os
     import torch
     from src.contracts.schemas import (
-        load_gaussian_state, load_flame_mesh, load_identity_embedding,
+        load_gaussian_state, load_faceverse_mesh, load_identity_embedding,
         ExpressionState,
     )
     from src.animation.api import (
-        apply_blendshapes, detect_mouth_opening,
+        apply_faceverse_deformation, detect_mouth_opening,
         run_refinement, check_identity_preservation,
     )
     from src.prior.api import load_frozen_prior
@@ -288,20 +288,19 @@ def step_animation(config) -> None:
     for expr_name in config.animation.expressions:
         print(f"  Expression: {expr_name}")
 
-        # Create expression state
-        expr = ExpressionState(
-            name=expr_name,
-            flame_expr_coeffs=torch.zeros(100),
-            flame_pose_coeffs=torch.zeros(36),
-        )
+# Create expression state (FaceVerse ARKit blendshapes)
+                    expr = ExpressionState(
+                        name=expr_name,
+                        faceverse_expr_coeffs=torch.zeros(52),
+                    )
 
-        # Set expression-specific coefficients
-        if expr_name == "smile":
-            expr.flame_expr_coeffs[0] = 0.5  # Lip corner pull
-        elif expr_name == "open_mouth":
-            expr.flame_pose_coeffs[4] = 0.4  # Jaw open
-        elif expr_name == "raised_brow":
-            expr.flame_expr_coeffs[1] = 0.3  # Brow raise
+                    # Set expression-specific coefficients (ARKit indices)
+                    if expr_name == "smile":
+                        expr.faceverse_expr_coeffs[4] = 0.5  # cheekSquint_L
+                    elif expr_name == "open_mouth":
+                        expr.faceverse_expr_coeffs[21] = 0.6  # jawOpen
+                    elif expr_name == "raised_brow":
+                        expr.faceverse_expr_coeffs[2] = 0.3  # browInnerUp
 
         # Directive 25: Detect if refinement needed
         needs_refinement = detect_mouth_opening(expr, config.animation)

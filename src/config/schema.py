@@ -18,12 +18,12 @@ from typing import Any, Dict, List, Optional, Tuple
 import yaml
 
 
-# ── FLAME constants ──────────────────────────────────────────────────────────
-FLAME_CANONICAL_VERT_COUNT: int = 5023  # FLAME 2023 canonical vertex count
-FLAME_CANONICAL_FACE_COUNT: int = 9976  # FLAME 2023 canonical face count
-FLAME_SHAPE_BS_DIM: int = 300
-FLAME_EXPR_BS_DIM: int = 100
-FLAME_POSE_BS_DIM: int = 36
+# ── FaceVerse constants (replacing FLAME) ──────────────────────────────────
+FACEVERSE_CANONICAL_VERT_COUNT: int = 6335  # FaceVerse v2 simplified vertex count
+FACEVERSE_CANONICAL_FACE_COUNT: int = 12566  # FaceVerse v2 simplified face count
+FACEVERSE_ID_DIM: int = 150
+FACEVERSE_EXPR_DIM: int = 52    # Apple ARKit-compatible blendshapes
+FACEVERSE_TEX_DIM: int = 251    # Texture/albedo coefficient dimension
 ID_EMBEDDING_DIM: int = 512
 
 

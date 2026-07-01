@@ -66,7 +66,7 @@ class TestFullPipelineSmoke(unittest.TestCase):
     def test_all_contracts_importable(self):
         """Test that all data contracts are importable and constructable."""
         from src.contracts.schemas import (
-            GaussianState, FlameMesh, IdentityEmbedding,
+            GaussianState, FaceVerseMesh, IdentityEmbedding,
             CameraSample, RenderResult, ExpressionState, RunManifest,
         )
         import torch

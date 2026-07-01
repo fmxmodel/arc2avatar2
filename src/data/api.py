@@ -14,11 +14,11 @@ import cv2
 import numpy as np
 import torch
 
-from src.config.schema import FLAME_CANONICAL_VERT_COUNT
+from src.config.schema import FACEVERSE_CANONICAL_VERT_COUNT
 from src.contracts.schemas import (
-    FlameMesh,
+    FaceVerseMesh,
     IdentityEmbedding,
-    save_flame_mesh,
+    save_faceverse_mesh,
     save_identity_embedding,
 )
 from src.errors.hierarchy import DataError
@@ -229,51 +229,50 @@ def extract_identity_embedding(
     print(f"[DATA] Saved ID embedding: {output_npy} + {output_json}")
 
 
-def load_flame_template(pkl_path: str, output_pt_path: str) -> None:
-    """Load FLAME template mesh (Directive 8).
+def load_faceverse_model(npy_path: str, output_pt_path: str) -> None:
+    """Load FaceVerse model from .npy (Directive 8 - FaceVerse version).
 
-    Inputs:    path to generic_model.pkl, output path for .pt.
+    Inputs:    path to faceverse_simple_v2.npy, output path for .pt.
     Outputs:   None (writes file).
-    Exceptions: raises DataError if FLAME loading fails or vertex count mismatches.
-    Side effects: writes flame_loaded.pt with schema_version.
+    Exceptions: raises DataError if loading fails or vertex count mismatches.
+    Side effects: writes faceverse_loaded.pt with schema_version.
     """
-    if not os.path.exists(pkl_path):
+    if not os.path.exists(npy_path):
         raise DataError(
-            what_failed="FLAME template missing",
-            why=f"File not found: {pkl_path}",
-            how_to_fix=f"Download generic_model.pkl to {pkl_path}",
+            what_failed="FaceVerse model missing",
+            why=f"File not found: {npy_path}",
+            how_to_fix=f"Download faceverse_simple_v2.npy to {npy_path}",
         )
 
     try:
-        # Load FLAME model
-        import pickle
-        with open(pkl_path, "rb") as f:
-            flame_data = pickle.load(f, encoding="latin1")
+        import numpy as np
+        fv = np.load(npy_path, allow_pickle=True).item()
 
-        # FLAME model structure
-        V = torch.tensor(flame_data["v_template"], dtype=torch.float32)  # [Nv, 3]
-        F = torch.tensor(flame_data["f"].astype(np.int64), dtype=torch.int64)  # [Nf, 3]
-        shape_bs = torch.tensor(flame_data["shapedirs"][:, :, :300], dtype=torch.float32)
-        expr_bs = torch.tensor(flame_data["shapedirs"][:, :, 300:400], dtype=torch.float32)
-        posedirs = torch.tensor(flame_data["posedirs"], dtype=torch.float32)  # [Nv*3, 36]
-        # posedirs needs reshaping: [Nv*3, 36] -> [Nv, 3, 36]
-        Nv = V.shape[0]
-        pose_bs = posedirs.view(Nv, 3, 36)
+        Nv = fv['meanshape'].shape[0] // 3
+        V = torch.tensor(fv['meanshape'].reshape(-1, 3), dtype=torch.float32)
+        F = torch.tensor(fv['tri'].astype(np.int64), dtype=torch.int64)
+        idBase = torch.tensor(fv['idBase'], dtype=torch.float32)
+        expBase = torch.tensor(fv['exBase_52'], dtype=torch.float32) if 'exBase_52' in fv else torch.tensor(fv['exBase'], dtype=torch.float32)
+        texBase = torch.tensor(fv['texBase'], dtype=torch.float32)
+        meanshape = torch.tensor(fv['meanshape'], dtype=torch.float32)
+        meantex = torch.tensor(fv['meantex'], dtype=torch.float32)
+        point_buf = torch.tensor(fv['point_buf'].astype(np.int64), dtype=torch.int64)
 
     except Exception as e:
         raise DataError(
-            what_failed="FLAME loading failed",
+            what_failed="FaceVerse loading failed",
             why=str(e),
-            how_to_fix="Verify generic_model.pkl is the correct FLAME 2023 model",
+            how_to_fix="Verify the .npy file is a valid FaceVerse model",
         )
 
-    # Validate Invariant I1
-    assert V.shape[0] == FLAME_CANONICAL_VERT_COUNT, \
-        f"FLAME vertex count {V.shape[0]} != expected {FLAME_CANONICAL_VERT_COUNT}"
+    assert V.shape[0] == FACEVERSE_CANONICAL_VERT_COUNT, \
+        f"FaceVerse vertex count {V.shape[0]} != expected {FACEVERSE_CANONICAL_VERT_COUNT}"
 
-    mesh = FlameMesh(V=V, F=F, shape_bs=shape_bs, expr_bs=expr_bs, pose_bs=pose_bs)
-    save_flame_mesh(mesh, output_pt_path)
-    print(f"[DATA] Saved FLAME mesh: {output_pt_path} ({Nv} vertices)")
+    mesh = FaceVerseMesh(V=V, F=F, idBase=idBase, expBase=expBase,
+                          texBase=texBase, meanshape=meanshape,
+                          meantex=meantex, point_buf=point_buf)
+    save_faceverse_mesh(mesh, output_pt_path)
+    print(f"[DATA] Saved FaceVerse mesh: {output_pt_path} ({Nv} vertices)")
 
 
 def verify_panohead_dataset(

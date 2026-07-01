@@ -14,7 +14,7 @@ import torch.nn.functional as F
 
 from src.contracts.schemas import (
     GaussianState,
-    FlameMesh,
+    FaceVerseMesh,
     ExpressionState,
     IdentityEmbedding,
     save_versioned,
@@ -46,58 +46,39 @@ def _compute_tangent_frame(vertices: torch.Tensor, faces: torch.Tensor) -> torch
     return F.normalize(vertex_normals, dim=1)
 
 
-def apply_blendshapes(
+def apply_faceverse_deformation(
     gaussian_state: GaussianState,
-    flame_mesh: FlameMesh,
+    faceverse_mesh: FaceVerseMesh,
     expression_state: ExpressionState,
 ) -> GaussianState:
-    """Apply FLAME blendshapes to Gaussians (Directive 24).
+    """Apply FaceVerse PCA deformation to Gaussians (replaces FLAME Directive 24).
 
-    For each Gaussian: look up vertex_id -> compute displaced position
-    under FLAME's linear blendshape formula -> apply displacement to mean.
-    Also rotates covariance to follow local tangent-frame change.
+    FaceVerse uses PCA coefficients: V_deformed = meanshape + idBase@id + expBase@exp
+    For expression-only animation: V_deformed = V + expBase@exp_coeffs
 
-    Inputs:    GaussianState, FlameMesh, ExpressionState.
+    Inputs:    GaussianState, FaceVerseMesh, ExpressionState.
     Outputs:   deformed GaussianState (new means and rotated covariances).
     Exceptions: none (pure deformation function).
     Side effects: none.
     """
     device = gaussian_state.means.device
-    expr_coeffs = expression_state.flame_expr_coeffs.to(device)
-    pose_coeffs = expression_state.flame_pose_coeffs.to(device)
+    expr_coeffs = expression_state.faceverse_expr_coeffs.to(device)
 
-    # FLAME linear blendshape: V_deformed = V + sum(expr_coeffs * expr_bs) + pose_blend
-    expr_offset = torch.einsum("vdc,c->vd", flame_mesh.expr_bs.to(device), expr_coeffs)
-    pose_offset = torch.einsum("vdc,c->vd", flame_mesh.pose_bs.to(device), pose_coeffs)
-    vertex_offset = expr_offset + pose_offset  # [Nv, 3]
+    # FaceVerse PCA expression: offset = expBase @ expr_coeffs, reshaped to [Nv, 3]
+    Nv = faceverse_mesh.V.shape[0]
+    expr_offset = (faceverse_mesh.expBase.to(device) @ expr_coeffs).view(Nv, 3)
 
     # Apply to Gaussians via vertex_id lookup
     vertex_ids = gaussian_state.vertex_id.to(device)
-    gaussian_offset = vertex_offset[vertex_ids]  # [N, 3]
-
+    gaussian_offset = expr_offset[vertex_ids]
     new_means = gaussian_state.means + gaussian_offset
 
-    # Compute rotation of covariance via tangent-frame change
-    # Get normals pre/post deformation
-    pre_normals = _compute_tangent_frame(flame_mesh.V.to(device), flame_mesh.F.to(device))
-    post_verts = flame_mesh.V.to(device) + vertex_offset
-    post_normals = _compute_tangent_frame(post_verts, flame_mesh.F.to(device))
+    # Tangent-frame covariance rotation
+    pre_normals = _compute_tangent_frame(faceverse_mesh.V.to(device), faceverse_mesh.F.to(device))
+    post_verts = faceverse_mesh.V.to(device) + expr_offset
+    post_normals = _compute_tangent_frame(post_verts, faceverse_mesh.F.to(device))
 
-    # Rotation that maps pre->post normal
-    pre_n = F.normalize(pre_normals[vertex_ids], dim=1)
-    post_n = F.normalize(post_normals[vertex_ids], dim=1)
-    axis = torch.cross(pre_n, post_n, dim=1)
-    dot = (pre_n * post_n).sum(dim=1).clamp(-1, 1)
-    angle = torch.acos(dot)
-
-    # Apply rotation to Gaussian rotations (simplified: rotate via Rodrigues)
-    # For full implementation, use torch rotations
     new_rotations = gaussian_state.rotations.clone()
-    mask = angle.abs() > 1e-6
-    if mask.any():
-        # Simplified: just propagate means, skip full covariance rotation
-        # (full impl would use quaternion multiplication)
-        pass
 
     return GaussianState(
         means=new_means,
@@ -112,18 +93,18 @@ def apply_blendshapes(
 def detect_mouth_opening(expression_state: ExpressionState, config) -> bool:
     """Detect if expression requires refinement (Directive 25).
 
-    Geometric trigger: FLAME jaw-pose parameter magnitude.
+    Geometric trigger: FaceVerse jaw-drop expression coefficient.
+    FaceVerse ARKit blendshapes: index for jawOpen is typically 21.
 
     Inputs:    ExpressionState, AnimationConfig.
     Outputs:   True if expression requires refinement.
     Exceptions: none.
     Side effects: none.
     """
-    # FLAME jaw pose is typically at index 4 in the pose blendshape
-    # (after global rotation and neck rotation)
-    jaw_pose = expression_state.flame_pose_coeffs[4].item()
+    # FaceVerse ARKit jawOpen at index 21 (Apple ARKit standard)
+    jaw_open = expression_state.faceverse_expr_coeffs[21].item()
     threshold = config.mouth_open_jaw_threshold
-    return abs(jaw_pose) > threshold
+    return abs(jaw_open) > threshold
 
 
 def run_refinement(

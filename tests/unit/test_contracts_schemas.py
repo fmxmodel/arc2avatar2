@@ -87,20 +87,23 @@ class TestIdentityEmbedding(unittest.TestCase):
             IdentityEmbedding(vector=vec, source_image_hash="abc123")
 
 
-class TestFlameMesh(unittest.TestCase):
-    """Test FlameMesh schema (Directive 40)."""
+class TestFaceVerseMesh(unittest.TestCase):
+    """Test FaceVerseMesh schema (Directive 40)."""
 
     def test_valid_construction(self):
-        """Test FlameMesh with valid shapes."""
-        from src.contracts.schemas import FlameMesh
+        """Test FaceVerseMesh with valid shapes."""
+        from src.contracts.schemas import FaceVerseMesh
 
-        nv = 5023
-        mesh = FlameMesh(
+        nv = 6335
+        mesh = FaceVerseMesh(
             V=torch.randn(nv, 3),
-            F=torch.randint(0, nv, (9976, 3)),
-            shape_bs=torch.randn(nv, 3, 300),
-            expr_bs=torch.randn(nv, 3, 100),
-            pose_bs=torch.randn(nv, 3, 36),
+            F=torch.randint(0, nv, (12566, 3)),
+            idBase=torch.randn(nv*3, 150),
+            expBase=torch.randn(nv*3, 52),
+            texBase=torch.randn(nv*3, 251),
+            meanshape=torch.randn(nv*3),
+            meantex=torch.randn(nv*3),
+            point_buf=torch.randint(0, nv, (nv, 8)),
         )
         self.assertEqual(mesh.V.shape, (nv, 3))
 

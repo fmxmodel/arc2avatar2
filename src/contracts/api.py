@@ -6,7 +6,7 @@ Directives 40-42.
 
 from src.contracts.schemas import (
     GaussianState,
-    FlameMesh,
+    FaceVerseMesh,
     IdentityEmbedding,
     CameraSample,
     RenderResult,
@@ -17,8 +17,8 @@ from src.contracts.schemas import (
     load_versioned,
     save_gaussian_state,
     load_gaussian_state,
-    save_flame_mesh,
-    load_flame_mesh,
+    save_faceverse_mesh,
+    load_faceverse_mesh,
     save_identity_embedding,
     load_identity_embedding,
     save_run_manifest,

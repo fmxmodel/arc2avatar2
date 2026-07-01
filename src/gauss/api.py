@@ -9,7 +9,7 @@ import torch
 
 from src.contracts.schemas import (
     GaussianState,
-    FlameMesh,
+    FaceVerseMesh,
     save_gaussian_state,
     load_gaussian_state,
 )
@@ -19,21 +19,21 @@ from src.trainfw.factory import build_optimizer
 from src.trainfw.grad_utils import zero_grad, clip_gradients
 
 
-def init_gaussians_from_flame(flame_mesh: FlameMesh, config) -> GaussianState:
-    """Instantiate one 3D Gaussian per FLAME vertex (Directive 10).
+def init_gaussians_from_faceverse(faceverse_mesh: FaceVerseMesh, config) -> GaussianState:
+    """Instantiate one 3D Gaussian per FaceVerse vertex (Directive 10).
 
-    Inputs:    FlameMesh from Directive 8, GaussianInitConfig.
-    Outputs:   GaussianState with one Gaussian per FLAME vertex.
+    Inputs:    FaceVerseMesh from Directive 8, GaussianInitConfig.
+    Outputs:   GaussianState with one Gaussian per FaceVerse vertex.
     Exceptions: raises TrainingError on initialization failure.
     Side effects: saves init_state.pt via save_versioned.
     """
     device = get_device_obj()
-    N = flame_mesh.V.shape[0]
+    N = faceverse_mesh.V.shape[0]
 
-    # Mean positions from FLAME vertices
-    means = flame_mesh.V.clone().to(device)
+    # Mean positions from FaceVerse vertices
+    means = faceverse_mesh.V.clone().to(device)
 
-    # Scale: small isotropic (0.002 in FLAME unit space, pre-activation)
+    # Scale: small isotropic (0.002 in unit space, pre-activation)
     # log(0.002) ≈ -6.2 — this is the pre-activation value
     init_scale = config.init_scale
     scales = torch.full((N, 3), torch.log(torch.tensor(init_scale)), device=device)

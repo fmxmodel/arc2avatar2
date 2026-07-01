@@ -67,34 +67,40 @@ class GaussianState:
 
 
 @dataclass
-class FlameMesh:
-    """FLAME template mesh — the geometric scaffold.
+class FaceVerseMesh:
+    """FaceVerse template mesh — replacing FLAME.
+
+    FaceVerse v2 simplified model: 6335 vertices, PCA-based.
+    Uses idBase/expBase/texBase matrices instead of FLAME's blendshapes.
 
     Shapes:
-        V:         [Nv, 3]      float32 — canonical vertex positions
-        F:         [Nf, 3]      int64   — triangle indices
-        shape_bs:  [Nv, 3, 300] float32 — shape blendshape basis
-        expr_bs:   [Nv, 3, 100] float32 — expression blendshape basis
-        pose_bs:   [Nv, 3, 36]  float32 — pose corrective basis
+        V:          [Nv, 3]      float32 — canonical vertex positions
+        F:          [Nf, 3]      int64   — triangle indices
+        idBase:     [Nv*3, 150]  float32 — identity PCA basis
+        expBase:    [Nv*3, 52]   float32 — expression PCA basis
+        texBase:    [Nv*3, 251]  float32 — texture PCA basis
+        meanshape:  [Nv*3]       float32 — mean shape
+        meantex:    [Nv*3]       float32 — mean texture
+        point_buf:  [Nv, 8]      int64   — neighbor face buffer
 
-    Invariant I1: Nv is fixed at the canonical FLAME vertex count.
+    Invariant I1: Nv is fixed at the FaceVerse canonical vertex count (6335).
     """
-    V: torch.Tensor        # [Nv, 3]      float32
-    F: torch.Tensor        # [Nf, 3]      int64
-    shape_bs: torch.Tensor # [Nv, 3, 300] float32
-    expr_bs: torch.Tensor  # [Nv, 3, 100] float32
-    pose_bs: torch.Tensor  # [Nv, 3, 36]  float32
+    V: torch.Tensor         # [Nv, 3]      float32
+    F: torch.Tensor         # [Nf, 3]      int64
+    idBase: torch.Tensor    # [Nv*3, 150]  float32
+    expBase: torch.Tensor   # [Nv*3, 52]   float32
+    texBase: torch.Tensor   # [Nv*3, 251]  float32
+    meanshape: torch.Tensor # [Nv*3]       float32
+    meantex: torch.Tensor   # [Nv*3]       float32
+    point_buf: torch.Tensor # [Nv, 8]      int64
 
     def __post_init__(self) -> None:
         nv = self.V.shape[0]
         assert self.V.shape[1] == 3, f"V.shape[1] must be 3, got {self.V.shape[1]}"
         assert self.F.shape[1] == 3, f"F.shape[1] must be 3, got {self.F.shape[1]}"
-        assert self.shape_bs.shape == (nv, 3, 300), \
-            f"shape_bs shape mismatch: {self.shape_bs.shape}"
-        assert self.expr_bs.shape == (nv, 3, 100), \
-            f"expr_bs shape mismatch: {self.expr_bs.shape}"
-        assert self.pose_bs.shape == (nv, 3, 36), \
-            f"pose_bs shape mismatch: {self.pose_bs.shape}"
+        assert self.idBase.shape == (nv*3, 150), f"idBase mismatch: {self.idBase.shape}"
+        assert self.expBase.shape == (nv*3, 52), f"expBase mismatch: {self.expBase.shape}"
+        assert self.texBase.shape == (nv*3, 251), f"texBase mismatch: {self.texBase.shape}"
 
 
 @dataclass
@@ -151,11 +157,11 @@ class OptimizerState:
 class ExpressionState:
     """State of a single facial expression for animation.
 
-    Each expression has blendshape coefficients and an optional refinement patch.
+    Each expression has FaceVerse ARKit-compatible expression coefficients
+    and an optional refinement patch.
     """
     name: str
-    flame_expr_coeffs: torch.Tensor   # [100] float32
-    flame_pose_coeffs: torch.Tensor   # [36]  float32
+    faceverse_expr_coeffs: torch.Tensor   # [52] float32, Apple ARKit blendshapes
     requires_refinement: bool = False  # set by Directive 25's trigger
     refined_patch: Optional[GaussianState] = None  # None until Directive 26 runs
 
@@ -239,14 +245,14 @@ def load_gaussian_state(path: str) -> GaussianState:
     return load_versioned(path)
 
 
-def save_flame_mesh(mesh: FlameMesh, path: str) -> str:
-    """Save a FlameMesh as .pt with schema version."""
-    assert path.endswith(".pt"), f"FlameMesh must be saved as .pt, got: {path}"
+def save_faceverse_mesh(mesh: FaceVerseMesh, path: str) -> str:
+    """Save a FaceVerseMesh as .pt with schema version."""
+    assert path.endswith(".pt"), f"FaceVerseMesh must be saved as .pt, got: {path}"
     return save_versioned(mesh, path)
 
 
-def load_flame_mesh(path: str) -> FlameMesh:
-    """Load a FlameMesh from .pt."""
+def load_faceverse_mesh(path: str) -> FaceVerseMesh:
+    """Load a FaceVerseMesh from .pt."""
     assert path.endswith(".pt")
     return load_versioned(path)
 
